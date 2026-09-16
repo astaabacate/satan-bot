@@ -10,11 +10,18 @@ jobs:
           DT: ${{ secrets.DISCORD_TOKEN }}
         run: |
           curl -sS "https://discord.com/api/v10/guilds/1484007517091528914/channels" -H "Authorization: Bot $DT" -o ch.json -w "list %{http_code}\n"
-          PARENT=$(python3 -c "import json;cs=json.load(open('ch.json'));b=[c for c in cs if c['name']=='bump'];print(b[0].get('parent_id') or '' if b else '')")
-          echo "parent do bump: $PARENT"
-          if [ -n "$PARENT" ]; then
-            curl -sS -X POST "https://discord.com/api/v10/guilds/1484007517091528914/channels" -H "Authorization: Bot $DT" -H "Content-Type: application/json" -d "{"name":"・confessionario","type":0,"parent_id":"$PARENT","reason":"nuke: restauracao"}" -o /dev/null -w "create %{http_code}\n"
-          else
-            curl -sS -X POST "https://discord.com/api/v10/guilds/1484007517091528914/channels" -H "Authorization: Bot $DT" -H "Content-Type: application/json" -d "{"name":"・confessionario","type":0,"reason":"nuke: restauracao"}" -o /dev/null -w "create %{http_code}\n"
-          fi
+          python3 - << 'PY'
+          import json
+          cs = json.load(open('ch.json'))
+          bump = [c for c in cs if c['name'] == 'bump']
+          cats = [c for c in cs if c['type'] == 4]
+          print('categorias:', [(c['id'], c['name']) for c in cats])
+          parent = bump[0].get('parent_id') if bump else None
+          print('parent bump:', parent)
+          body = {"name": "・confessionario", "type": 0, "reason": "nuke: restauracao"}
+          if parent: body["parent_id"] = parent
+          json.dump(body, open('body.json', 'w'), ensure_ascii=False)
+          PY
+          curl -sS -X POST "https://discord.com/api/v10/guilds/1484007517091528914/channels" -H "Authorization: Bot $DT" -H "Content-Type: application/json" -d @body.json -o resp.json -w "create %{http_code}\n"
+          head -c 400 resp.json; echo
           exit 0
