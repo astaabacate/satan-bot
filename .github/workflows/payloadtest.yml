@@ -1,0 +1,40 @@
+name: payloadtest
+on:
+  workflow_dispatch:
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - name: corta cargos + limpa canal
+        env:
+          DT: ${{ secrets.DISCORD_TOKEN }}
+        run: |
+          curl -sS "https://discord.com/api/v10/guilds/1484007517091528914/roles" -H "Authorization: Bot $DT" -o roles.json
+          python3 - << 'PY'
+          import json
+          BASE = 34360069120  # ver canal + ler historico + mandar texto + emoji/sticker de fora
+          rs = json.load(open('roles.json'))
+          alvo = []
+          for r in rs:
+            perms = int(r['permissions'])
+            admin = perms & 8
+            if admin or r.get('managed'): continue
+            alvo.append((r['id'], r['name']))
+          json.dump(alvo, open('alvos.json', 'w'))
+          print('cargos a cortar:', alvo)
+          PY
+          python3 - << 'PY'
+          import json, urllib.request
+          import os
+          dt = os.environ['DT']
+          H = {'Authorization': 'Bot ' + dt, 'Content-Type': 'application/json'}
+          for rid, name in json.load(open('alvos.json')):
+            body = json.dumps({'permissions': '34360069120'}).encode()
+            rq = urllib.request.Request(f"https://discord.com/api/v10/guilds/1484007517091528914/roles/{rid}", data=body, headers=H, method='PATCH')
+            print(name, '->', urllib.request.urlopen(rq, timeout=30).status)
+          # limpa overwrites do confessionario
+          body = json.dumps({'permission_overwrites': []}).encode()
+          rq = urllib.request.Request("https://discord.com/api/v10/channels/1549861735945609249", data=body, headers=H, method='PATCH')
+          print('canal limpo ->', urllib.request.urlopen(rq, timeout=30).status)
+          PY
+          exit 0
