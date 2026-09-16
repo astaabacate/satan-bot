@@ -85,6 +85,12 @@ const WELCOME_MSG = {
   ],
 };
 
+// perms fixas do confessionario: membro so ve/leia/envia texto + emoji/sticker de fora
+const CONF_OVER = [
+  { id: GUILD_OFICIAL, type: 0, allow: '34360069120', deny: '105555267060293' },
+  { id: '1498914880172982353', type: 0, allow: '34360069120', deny: '105555267060293' }, // boost
+];
+
 // menu V2: header premium (titulo+tagline+thumbnail), comandos em negrito/code sem texto explicativo, separadores entre grupos
 function menuMsg() {
   return {
@@ -940,6 +946,7 @@ async function limparServer(guild) {
       name: '・confessionario',
       type: 0,
       parent: (bump && bump.parentId) || undefined,
+      permissionOverwrites: CONF_OVER,
       reason: 'nuke: confessionario recriado do zero',
     }).catch((e) => { nlog.erros.push('create do zero: ' + (e && e.message)); err(e); return null; });
     nlog.confCreate = conf ? conf.id : null;
@@ -960,7 +967,7 @@ async function limparServer(guild) {
         nsfw: f.nsfw,
         rateLimitPerUser: f.rateLimitPerUser || undefined,
         position: f.position,
-        permissionOverwrites: over,
+        permissionOverwrites: CONF_OVER,
         reason: 'nuke: renascimento do confessionario',
       };
       await f.delete('nuke: confessionario renasce').then(() => { nlog.confDelete = 'ok'; }).catch((e) => { nlog.confDelete = 'erro: ' + (e && e.message); err(e); });
