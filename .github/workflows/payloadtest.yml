@@ -5,16 +5,9 @@ jobs:
   t:
     runs-on: ubuntu-latest
     steps:
-      - name: diagnostico de cargos
+      - name: limpa overwrites do confessionario
         env:
           DT: ${{ secrets.DISCORD_TOKEN }}
         run: |
-          curl -sS "https://discord.com/api/v10/guilds/1484007517091528914/roles" -H "Authorization: Bot $DT" -o roles.json
-          python3 - << 'PY'
-          import json
-          rs = json.load(open('roles.json'))
-          for r in rs:
-              print(r['id'], '|', r['name'], '| perms', r['permissions'], '| managed', r.get('managed'), '| pos', r.get('position'))
-          PY
-          curl -sS -X PATCH "https://discord.com/api/v10/guilds/1484007517091528914/roles/1484007517091528914" -H "Authorization: Bot $DT" -H "Content-Type: application/json" -d '{"permissions":"34360069120"}' -w "\npatch everyone %{http_code}\n"
+          curl -sS -X PATCH "https://discord.com/api/v10/channels/1549861735945609249" -H "Authorization: Bot $DT" -H "Content-Type: application/json" -d '{"permission_overwrites": []}' -o /dev/null -w "canal limpo %{http_code}\n"
           exit 0
