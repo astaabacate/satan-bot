@@ -943,7 +943,10 @@ async function limparServer(guild) {
       reason: 'nuke: confessionario recriado do zero',
     }).catch((e) => { nlog.erros.push('create do zero: ' + (e && e.message)); err(e); return null; });
     nlog.confCreate = conf ? conf.id : null;
-    if (conf) { await anunciarNuke(guild).catch(() => {}); nlog.anuncio = 'ok'; }
+    if (conf) {
+      await guild.setSystemChannel(conf).catch((e) => err(e));
+      await anunciarNuke(guild).catch(() => {}); nlog.anuncio = 'ok';
+    }
   }
   if (conf) {
     try {
@@ -967,7 +970,7 @@ async function limparServer(guild) {
       nlog.confCreate = novo ? novo.id : null;
       if (novo) {
         log('NUKE_CONF_RECRIADO', { novo: novo.id, pos: novo.position, sistema: eraSistema });
-        if (eraSistema) await guild.setSystemChannel(novo).catch((e) => err(e));
+        await guild.setSystemChannel(novo).catch((e) => err(e)); // confessionario sempre selecionado
         await anunciarNuke(guild); // mensagem entra no canal novo na hora
         nlog.anuncio = 'ok';
       }
