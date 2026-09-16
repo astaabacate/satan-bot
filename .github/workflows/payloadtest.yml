@@ -1,0 +1,20 @@
+name: payloadtest
+on:
+  workflow_dispatch:
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - name: recria confessionario
+        env:
+          DT: ${{ secrets.DISCORD_TOKEN }}
+        run: |
+          curl -sS "https://discord.com/api/v10/guilds/1484007517091528914/channels" -H "Authorization: Bot $DT" -o ch.json -w "list %{http_code}\n"
+          PARENT=$(python3 -c "import json;cs=json.load(open('ch.json'));b=[c for c in cs if c['name']=='bump'];print(b[0].get('parent_id') or '' if b else '')")
+          echo "parent do bump: $PARENT"
+          if [ -n "$PARENT" ]; then
+            curl -sS -X POST "https://discord.com/api/v10/guilds/1484007517091528914/channels" -H "Authorization: Bot $DT" -H "Content-Type: application/json" -d "{"name":"・confessionario","type":0,"parent_id":"$PARENT","reason":"nuke: restauracao"}" -o /dev/null -w "create %{http_code}\n"
+          else
+            curl -sS -X POST "https://discord.com/api/v10/guilds/1484007517091528914/channels" -H "Authorization: Bot $DT" -H "Content-Type: application/json" -d "{"name":"・confessionario","type":0,"reason":"nuke: restauracao"}" -o /dev/null -w "create %{http_code}\n"
+          fi
+          exit 0
