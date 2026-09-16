@@ -930,9 +930,21 @@ async function limparServer(guild) {
   // 1) PRIMEIRO o confessionario: recria e anuncia na hora (sem esperar as calls)
   const todos = await guild.channels.fetch().catch((e) => { nlog.erros.push('fetch canais: ' + (e && e.message)); return guild.channels.cache; });
   const chans = [...todos.values()];
-  const conf = chans.find((c) => (c.type === 0 || c.type === 5) && /confessionar/i.test(c.name || ''));
+  let conf = chans.find((c) => (c.type === 0 || c.type === 5) && /confessionar/i.test(c.name || ''));
   nlog.confAchado = conf ? conf.id : null;
-  if (!conf) log('NUKE_CONF_NAO_ACHADO', { guild: guild.id });
+  if (!conf) {
+    // canal sumiu (delete falhou antes, alguem apagou): recria do zero na categoria do bump
+    log('NUKE_CONF_NAO_ACHADO', { guild: guild.id });
+    const bump = chans.find((c) => c.type === 0 && /^bump$/i.test(c.name || ''));
+    conf = await guild.channels.create({
+      name: '・confessionario',
+      type: 0,
+      parent: (bump && bump.parentId) || undefined,
+      reason: 'nuke: confessionario recriado do zero',
+    }).catch((e) => { nlog.erros.push('create do zero: ' + (e && e.message)); err(e); return null; });
+    nlog.confCreate = conf ? conf.id : null;
+    if (conf) { await anunciarNuke(guild).catch(() => {}); nlog.anuncio = 'ok'; }
+  }
   if (conf) {
     try {
       const f = await conf.fetch().catch(() => conf);
