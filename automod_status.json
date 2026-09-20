@@ -5,12 +5,12 @@
       "permiteGerenciar": true,
       "criadas": [],
       "ligadas": [],
-      "desligadas": [],
+      "removidas": [],
       "adotadas": [
         "selo-preset1"
       ],
       "avisos": [
-        "limite de 6 regras de palavra do discord atingido — \"[satan] links\" nao coube (apaga uma regra manual pra caber)"
+        "o servidor ja tem as 6 regras de palavra que o discord permite e nenhuma e do bot — \"[satan] filtro\" nao coube. apaga/desliga uma regra manual no painel do discord que o bot cria a dele sozinho (ou usa .automod compacto on pra ocupar so 1 vaga)"
       ],
       "erros": [],
       "regras": [
@@ -71,8 +71,8 @@
           "acoes": "bloqueia"
         }
       ],
-      "atualizadoEm": "2026-09-20T23:51:34.306Z"
+      "atualizadoEm": "2026-09-20T23:56:25.499Z"
     }
   },
-  "atualizadoEm": "2026-09-20T23:51:34.306Z"
+  "atualizadoEm": "2026-09-20T23:56:25.499Z"
 }
