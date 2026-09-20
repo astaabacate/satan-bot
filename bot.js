@@ -595,6 +595,7 @@ client.on('messageCreate', async (m) => {
         '**`.automod regex del <n>`**  •  **`.automod regex lista`**',
         '**`.automod asterisco on|off`** bloqueia quem usa `*` quebrado',
         '**`.automod compacto on|off`** junta link+palavras+regex numa regra só (cabe em 1 vaga)',
+        '**`.automod desligar <nome>`** desliga uma regra pelo nome (abre vaga quando as 6 do Discord tão cheias)',
         '**`.automod timeout 600`** o próprio automod dá timeout (0 = só bloqueia)',
         '**`.automod castigo 3 10`** 3 bloqueios em 10min = castigo progressivo do bot',
         '**`.automod alertas #canal`** o Discord posta lá o que bloqueou (ou `off`)',
@@ -606,7 +607,7 @@ client.on('messageCreate', async (m) => {
           cfg.on = true;
           return void await sincronizar('automod **ligado** e sincronizado nesse servidor.');
         }
-        if (sub === 'off' || sub === 'desligar') {
+        if (sub === 'off') {
           cfg.on = false;
           return void await sincronizar('automod **desligado** (as regras ficam desativadas, nada é apagado).');
         }
@@ -697,6 +698,23 @@ client.on('messageCreate', async (m) => {
           if (!low) return void await dizer(`asterisco está **${cfg.asterisco ? 'bloqueado' : 'liberado'}** (o bot já apaga mensagem com \`*\` na mão).`);
           cfg.asterisco = low === 'on' || low === 'ligar';
           return void await sincronizar(`asterisco: **${cfg.asterisco ? 'bloqueado' : 'liberado'}**.`);
+        }
+        // .automod desligar <nome> — abre vaga: as 6 regras de palavra do discord
+        // sao o limite, entao desligar uma manual libera espaco pro filtro do bot
+        if (sub === 'desligar' || sub === 'desativar' || sub === 'liberar') {
+          const nome = arg.trim();
+          if (!nome) return void await dizer('qual regra? ve os nomes em `.automod status` e manda `.automod desligar <nome>`.');
+          const rd = await automod.desligarRegra(m.guild, nome);
+          if (rd.ok.length) {
+            const r2 = await automod.sincronizar(m.guild, cfg, { forcar: true }).catch((e) => { err(e); return null; });
+            return void await dizer([
+              `desliguei: ${rd.ok.join(', ')} (da pra ligar de novo no painel do discord)`,
+              r2 && r2.criadas.length ? 'e ja criei: ' + r2.criadas.join(', ') : '',
+              r2 && r2.avisos.length ? 'avisos: ' + r2.avisos.join(' | ') : '',
+              r2 && r2.erros.length ? 'erros: ' + r2.erros.join(' | ') : '',
+            ].filter(Boolean).join('\n'));
+          }
+          return void await dizer('nao deu: ' + rd.erros.join(' | '));
         }
         if (sub === 'compacto') {
           if (!low) return void await dizer(`modo compacto está **${cfg.compacto !== false ? 'ligado' : 'desligado'}** (ligado = link+palavras+regex+asterisco numa regra só, ocupa 1 vaga em vez de 4).`);

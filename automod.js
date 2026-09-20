@@ -345,7 +345,7 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
   const todas = [...existentes.values()];
   const minhas = todas.filter((r) => String(r.name || '').startsWith(PREFIXO));
   const porGatilho = (t) => todas.filter((r) => r.triggerType === t);
-  let keywordCount = porGatilho(TRIGGER.Keyword).length;
+  let keywordCount = porGatilho(TRIGGER.Keyword).filter((r) => r.enabled).length;
 
   if (!cfg.on) {
     for (const r of minhas) {
@@ -430,8 +430,14 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
         out.ok.push(nome);
       }
     } catch (e) {
-      out.erros.push(nome + ': ' + msg(e));
-      _err(new Error(`automod ${nome}: ${msg(e)}`));
+      const m = msg(e);
+      if (/maximum|max\b|limit|limite/i.test(m) && def.triggerType === TRIGGER.Keyword) {
+        // servidor cheio de regras de palavra: nao e erro do bot, e o limite do discord
+        out.avisos.push(`o discord recusou "${nome}" por limite de regras — apaga/desliga uma regra manual no painel do discord que o bot cria a dele sozinho`);
+      } else {
+        out.erros.push(nome + ': ' + m);
+        _err(new Error(`automod ${nome}: ${m}`));
+      }
     }
   }
 
@@ -460,6 +466,26 @@ async function apagar(guild) {
     try {
       await guild.autoModerationRules.delete(r, 'satan: automod removido');
       out.apagadas.push(r.name);
+    } catch (e) { out.erros.push(r.name + ': ' + msg(e)); }
+  }
+  return out;
+}
+
+// desliga uma regra pelo nome — SO quando o dono pede explicitamente
+// (serve pra abrir vaga quando as 6 regras de palavra do discord estao ocupadas).
+// Nao apaga nada: da pra ligar de novo no painel do discord
+async function desligarRegra(guild, nome) {
+  const out = { ok: [], erros: [] };
+  if (!nome) { out.erros.push('nao disse o nome da regra'); return out; }
+  let existentes;
+  try { existentes = await guild.autoModerationRules.fetch(); } catch (e) { out.erros.push(msg(e)); return out; }
+  const alvo = [...existentes.values()].filter((r) => String(r.name || '').toLowerCase() === String(nome).trim().toLowerCase());
+  if (!alvo.length) { out.erros.push('nao achei nenhuma regra com esse nome (ve os nomes em .automod status)'); return out; }
+  for (const r of alvo) {
+    if (!r.enabled) { out.erros.push(`"${r.name}" ja estava desligada`); continue; }
+    try {
+      await guild.autoModerationRules.edit(r, { enabled: false, reason: 'satan: pedido do dono' });
+      out.ok.push(r.name);
     } catch (e) { out.erros.push(r.name + ': ' + msg(e)); }
   }
   return out;
@@ -503,6 +529,7 @@ module.exports = {
   registrarStatus,
   sincronizar,
   apagar,
+  desligarRegra,
   listar,
   podeGerenciar,
   podeTimeout,
