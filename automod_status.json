@@ -1,0 +1,78 @@
+{
+  "guildas": {
+    "1484007517091528914": {
+      "on": true,
+      "permiteGerenciar": true,
+      "criadas": [],
+      "ligadas": [],
+      "desligadas": [],
+      "adotadas": [
+        "selo-preset1"
+      ],
+      "avisos": [
+        "limite de 6 regras de palavra do discord atingido — \"[satan] links\" nao coube (apaga uma regra manual pra caber)"
+      ],
+      "erros": [],
+      "regras": [
+        {
+          "nome": "selo0",
+          "nosso": false,
+          "on": true,
+          "gatilho": "palavra",
+          "acoes": "bloqueia"
+        },
+        {
+          "nome": "selo1",
+          "nosso": false,
+          "on": true,
+          "gatilho": "palavra",
+          "acoes": "bloqueia"
+        },
+        {
+          "nome": "selo2",
+          "nosso": false,
+          "on": true,
+          "gatilho": "palavra",
+          "acoes": "bloqueia"
+        },
+        {
+          "nome": "selo3",
+          "nosso": false,
+          "on": true,
+          "gatilho": "palavra",
+          "acoes": "bloqueia"
+        },
+        {
+          "nome": "selo4",
+          "nosso": false,
+          "on": true,
+          "gatilho": "palavra",
+          "acoes": "bloqueia"
+        },
+        {
+          "nome": "selo5",
+          "nosso": false,
+          "on": true,
+          "gatilho": "palavra",
+          "acoes": "bloqueia"
+        },
+        {
+          "nome": "selo-preset1",
+          "nosso": false,
+          "on": true,
+          "gatilho": "spam",
+          "acoes": "bloqueia"
+        },
+        {
+          "nome": "[satan] mencoes",
+          "nosso": true,
+          "on": true,
+          "gatilho": "mencoes",
+          "acoes": "bloqueia"
+        }
+      ],
+      "atualizadoEm": "2026-09-20T23:51:34.306Z"
+    }
+  },
+  "atualizadoEm": "2026-09-20T23:51:34.306Z"
+}
