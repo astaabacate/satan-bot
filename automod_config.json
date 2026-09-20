@@ -1,0 +1,25 @@
+{
+  "on": true,
+  "spam": true,
+  "mencoes": {
+    "on": true,
+    "limite": 5,
+    "antiRaid": true
+  },
+  "links": {
+    "on": true,
+    "permitidos": []
+  },
+  "palavras": [],
+  "regex": [],
+  "asterisco": false,
+  "timeoutSegundos": 0,
+  "castigo": {
+    "blocos": 3,
+    "janelaMin": 10
+  },
+  "aviso": {},
+  "cargosImunes": [],
+  "canaisImunes": [],
+  "canalAlertas": ""
+}

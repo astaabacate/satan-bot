@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { figCreate } = require('./fig.js');
+const automod = require('./automod.js'); // automod NATIVO do discord (bloqueia antes de aparecer)
 
 // token vem do .env ao lado — nao precisa de variavel de ambiente nem de chave na mao
 if (!process.env.DISCORD_TOKEN) {
@@ -114,6 +115,8 @@ function menuMsg() {
               '**`.cl [qtd]`**',
               '',
               '**`.bump`**',
+              '',
+              '**`.automod`**',
             ].join('\n'),
           },
           { type: 14, spacing: 2, divider: true },
@@ -263,11 +266,40 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
+// ---------- automod nativo do discord ----------
+// as regras vivem no servidor do discord (nao no bot), entao bloqueiam a mensagem
+// ANTES dela aparecer no canal e continuam valendo enquanto o bot reinicia
+automod.usar({ log, err });
+automod.criarSeFaltar();
+const automodBlocks = new Map(); // userId -> [timestamps] de bloqueios recentes do automod
+
+let automodUltimoResumo = '';
+async function automodSync(tag) {
+  const cfg = automod.ler();
+  for (const gid of INFERNO_GUILDS) {
+    const g = client.guilds.cache.get(gid);
+    if (!g) continue;
+    const r = await automod.sincronizar(g, cfg);
+    const resumo = { guild: gid, on: cfg.on, criadas: r.criadas, ligadas: r.ligadas, ok: r.ok.length, off: r.off, desligadas: r.desligadas, adotadas: r.adotadas, avisos: r.avisos, erros: r.erros };
+    const json = JSON.stringify(resumo);
+    if (json !== automodUltimoResumo) { // so loga quando muda, senao a cada 10min enchia o log
+      log('AUTOMOD_SYNC', { tag, ...resumo });
+      automodUltimoResumo = json;
+    }
+  }
+  return cfg;
+}
+
+// reconfere de tempo em tempo: se alguem apagar/desligar a regra no painel do
+// discord, o bot recria sozinho (o discord nao avisa o bot direito sobre isso)
+setInterval(() => { automodSync('tick').catch(err); }, 10 * 60 * 1000);
+
 client.once('ready', async () => {
   log('READY', { user: client.user.tag, id: client.user.id, guilds: client.guilds.cache.size });
   client.user.setActivity('o sofrimento dos condenados', { type: 3 });
   if (typeof varrerLinks === 'function') varrerLinks().catch(err); else err(new Error('varrerLinks ausente no ready'));
   if (typeof varrerFlood === 'function') varrerFlood().catch(err); else err(new Error('varrerFlood ausente no ready'));
+  automodSync('ready').catch(err); // liga/confere as regras do automod nativo
   (async () => {
     const stN = readJsonSafe(NUKE_STATE, {});
     if (stN && stN.on === true && stN.nextAt) {
@@ -308,7 +340,7 @@ client.on('guildMemberAdd', async (member) => {
 });
 
 // ---------- estado persistente no repo GitHub (sobrevive a religadas/updates) ----------
-const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json'];
+const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'automod_config.json'];
 async function ghStateLoad() {
   const tok = process.env.GITHUB_TOKEN, repo = process.env.GITHUB_REPOSITORY;
   if (!tok || !repo) return;
@@ -491,6 +523,195 @@ client.on('messageCreate', async (m) => {
       } catch (e) { err(e); }
       return;
     }
+    // ---------- .automod — automod NATIVO do discord ----------
+    // a regra mora no servidor do discord: a mensagem e barrada antes de aparecer,
+    // sem esperar o bot (segue valendo enquanto o bot reinicia)
+    if (c === '.automod' || c.startsWith('.automod ')) {
+      await m.delete().catch(() => {}); // o comando nao fica no canal
+      const args = m.content.trim().split(/\s+/).slice(1);
+      const sub = (args[0] || '').toLowerCase();
+      const arg = args.slice(1).join(' ');
+      const low = arg.toLowerCase();
+      const cfg = automod.ler();
+      const dizer = (texto) => whSend(m.channel, {
+        flags: 1 << 15,
+        components: [{ type: 17, accent_color: 8912896, components: [{ type: 10, content: String(texto).slice(0, 1900) }] }],
+      }).catch((e) => { err(e); return null; });
+      const sincronizar = async (extra) => {
+        automod.salvar(cfg);
+        let r;
+        try { r = await automod.sincronizar(m.guild, cfg, { forcar: true }); }
+        catch (e) { err(e); r = { erros: [String(e.message || e)] }; }
+        const linhas = [];
+        if (r.criadas && r.criadas.length) linhas.push('criadas/atualizadas: ' + r.criadas.join(', '));
+        if (r.ligadas && r.ligadas.length) linhas.push('religadas: ' + r.ligadas.join(', '));
+        if (r.off && r.off.length) linhas.push('desligadas: ' + r.off.join(', '));
+        if (r.desligadas && r.desligadas.length) linhas.push('desligadas (nao tem mais o que bloquear): ' + r.desligadas.join(', '));
+        if (r.adotadas && r.adotadas.length) linhas.push('achei regra feita na mão e usei ela: ' + r.adotadas.join(', '));
+        if (r.avisos && r.avisos.length) linhas.push('avisos: ' + r.avisos.join(' | '));
+        if (r.erros && r.erros.length) linhas.push('erros: ' + r.erros.join(' | '));
+        if (!linhas.length) linhas.push('tudo ja tava em dia.');
+        log('AUTOMOD_CMD', { sub, guild: m.guild.id, r });
+        return dizer([extra, ...linhas].filter(Boolean).join('\n'));
+      };
+
+      const AJUDA = [
+        '# AutoMod do Discord',
+        'Barra a mensagem **antes** dela aparecer no canal — e vale até com o bot desligado.',
+        '-# quem tem Administrador ou Gerenciar Servidor passa direto (isso é do próprio Discord)',
+        '',
+        '**`.automod`** liga/sincroniza  •  **`.automod status`** o que tá valendo',
+        '**`.automod off`** desliga as regras do bot  •  **`.automod apagar`** apaga elas de vez',
+        '',
+        '**`.automod spam on|off`**',
+        '**`.automod mencoes 5`** limite de marcações por mensagem (ou `off`)',
+        '**`.automod links on|off`**  •  **`.automod link permitir <txt>`**',
+        '**`.automod palavra <txt>`** bloqueia palavra/frase (aceita `*` curinga)',
+        '**`.automod palavra del <txt>`**  •  **`.automod palavras`** lista',
+        '**`.automod regex <padrão>`** até 10 (sem retrovisor tipo \\1)',
+        '**`.automod regex del <n>`**  •  **`.automod regex lista`**',
+        '**`.automod asterisco on|off`** bloqueia quem usa `*` quebrado',
+        '**`.automod timeout 600`** o próprio automod dá timeout (0 = só bloqueia)',
+        '**`.automod castigo 3 10`** 3 bloqueios em 10min = castigo progressivo do bot',
+        '**`.automod alertas #canal`** o Discord posta lá o que bloqueou (ou `off`)',
+        '**`.automod canal #canal`** / **`.automod cargo @cargo`** isenta (ou `limpar`)',
+      ].join('\n');
+
+      try {
+        if (!sub || sub === 'on' || sub === 'ligar' || sub === 'sync') {
+          cfg.on = true;
+          return void await sincronizar('automod **ligado** e sincronizado nesse servidor.');
+        }
+        if (sub === 'off' || sub === 'desligar') {
+          cfg.on = false;
+          return void await sincronizar('automod **desligado** (as regras ficam desativadas, nada é apagado).');
+        }
+        if (sub === 'apagar' || sub === 'limpar-tudo') {
+          const r = await automod.apagar(m.guild);
+          log('AUTOMOD_APAGAR', { guild: m.guild.id, r });
+          return void await dizer([`apaguei ${r.apagadas.length} regra(s): ${r.apagadas.join(', ') || '-'}`, r.erros.length ? 'erros: ' + r.erros.join(' | ') : ''].filter(Boolean).join('\n'));
+        }
+        if (sub === 'status') {
+          const regras = await automod.listar(m.guild);
+          const linha = (r) => `${r.on ? '🟢' : '⚫'} \`${r.nome}\` — ${r.gatilho} → ${r.acoes}${r.cargos.length ? ` (${r.cargos.length} cargo(s) imune(s))` : ''}${r.canais.length ? ` (${r.canais.length} canal(is) isento(s))` : ''}`;
+          const minhas = regras.filter((r) => r.nosso);
+          const manuais = regras.filter((r) => !r.nosso);
+          const corpo = [
+            minhas.length ? minhas.map(linha).join('\n') : 'nenhuma regra do bot nesse servidor. manda `.automod` pra criar.',
+            manuais.length ? '\n**feitas na mão no painel do discord** (o bot não mexe):\n' + manuais.map(linha).join('\n') : '',
+          ].filter(Boolean).join('\n');
+          return void await dizer([
+            '# AutoMod',
+            cfg.on ? 'estado no arquivo: **ligado**' : 'estado no arquivo: **desligado**',
+            `timeout do automod: **${cfg.timeoutSegundos || 0}s** • castigo: **${cfg.castigo.blocos} bloqueio(s) em ${cfg.castigo.janelaMin}min**`,
+            `palavras: **${cfg.palavras.length}** • regex: **${cfg.regex.length}** • alertas: ${cfg.canalAlertas ? `<#${cfg.canalAlertas}>` : 'off'}`,
+            '',
+            corpo,
+          ].join('\n'));
+        }
+        if (sub === 'ajuda' || sub === 'help' || sub === '?') return void await dizer(AJUDA);
+        if (sub === 'spam') {
+          if (!low) return void await dizer(`spam está **${cfg.spam ? 'ligado' : 'desligado'}**. use \`.automod spam on\` ou \`.automod spam off\`.`);
+          cfg.spam = low === 'on' || low === 'ligar';
+          return void await sincronizar(`spam do discord: **${cfg.spam ? 'ligado' : 'desligado'}**.`);
+        }
+        if (sub === 'mencoes' || sub === 'menções') {
+          if (!low || low === 'on') { cfg.mencoes.on = true; return void await sincronizar(`limite de menções: **${cfg.mencoes.limite}** por mensagem.`); }
+          if (low === 'off') { cfg.mencoes.on = false; return void await sincronizar('limite de menções: **desligado**.'); }
+          const n = parseInt(low, 10);
+          if (isNaN(n)) return void await dizer('usa `.automod mencoes <número>` (1 a 50).');
+          cfg.mencoes.on = true;
+          cfg.mencoes.limite = Math.max(1, Math.min(50, n));
+          return void await sincronizar(`limite de menções: **${cfg.mencoes.limite}** por mensagem.`);
+        }
+        if (sub === 'links' || sub === 'link') {
+          if (sub === 'links') {
+            if (!low) return void await dizer(`links estão **${cfg.links.on ? 'bloqueados' : 'liberados'}**. use \`.automod links on\` ou \`off\`.`);
+            cfg.links.on = low === 'on' || low === 'ligar';
+            return void await sincronizar(`links: **${cfg.links.on ? 'bloqueados' : 'liberados'}**.`);
+          }
+          if (low.startsWith('permitir')) {
+            const txt = arg.replace(/^permitir\s*/i, '').trim();
+            if (!txt) return void await dizer('qual link liberar? `.automod link permitir youtube.com`');
+            if (!cfg.links.permitidos.includes(txt)) cfg.links.permitidos.push(txt);
+            return void await sincronizar(`liberado: **${txt}** (resto continua bloqueado).`);
+          }
+          if (low === 'limpar' || low === 'reset') { cfg.links.permitidos = []; return void await sincronizar('lista de links liberados zerada.'); }
+          return void await dizer('usa `.automod link permitir <texto>` ou `.automod link limpar`.');
+        }
+        if (sub === 'palavra' || sub === 'palavras' || sub === 'bloquear') {
+          const del = /^(del|remover|tirar|apagar)\s+/i.test(arg);
+          const txt = arg.replace(/^(del|remover|tirar|apagar)\s+/i, '').trim();
+          if (sub === 'palavras' && !arg) {
+            const lista = cfg.palavras.length ? cfg.palavras.map((p, i) => `${i + 1}. \`${p}\``).join('\n') : 'lista vazia.';
+            return void await dizer(`# Palavras bloqueadas (${cfg.palavras.length})\n${lista}`);
+          }
+          if (!txt) return void await dizer('manda a palavra/frase: `.automod palavra bom dia` (aceita `*` curinga, ex: `*promo*`).');
+          if (del) {
+            cfg.palavras = cfg.palavras.filter((p) => p.toLowerCase() !== txt.toLowerCase());
+            return void await sincronizar(`removido da lista: \`${txt}\` (${cfg.palavras.length} restantes).`);
+          }
+          if (!cfg.palavras.some((p) => p.toLowerCase() === txt.toLowerCase())) cfg.palavras.push(txt);
+          return void await sincronizar(`bloqueado: \`${txt}\` — agora ninguém consegue nem enviar essa mensagem.`);
+        }
+        if (sub === 'regex') {
+          if (!arg || low === 'lista') {
+            const lista = cfg.regex.length ? cfg.regex.map((p, i) => `${i + 1}. \`${p}\``).join('\n') : 'lista vazia.';
+            return void await dizer(`# Regex (${cfg.regex.length}/10)\n${lista}\n-# regex do discord é a do rust: não tem retrovisor (\\1), lookahead, etc.`);
+          }
+          if (/^(del|remover|tirar|apagar)\s+/i.test(arg)) {
+            const n = parseInt(arg.replace(/^(del|remover|tirar|apagar)\s+/i, ''), 10);
+            if (isNaN(n) || !cfg.regex[n - 1]) return void await dizer('qual número? usa `.automod regex lista` pra ver.');
+            const fora = cfg.regex.splice(n - 1, 1)[0];
+            return void await sincronizar(`regex removida: \`${fora}\``);
+          }
+          if (cfg.regex.length >= 10) return void await dizer('já tem 10 regex (limite do discord). remove uma antes.');
+          cfg.regex.push(arg);
+          return void await sincronizar(`regex adicionada: \`${arg}\``);
+        }
+        if (sub === 'asterisco') {
+          if (!low) return void await dizer(`asterisco está **${cfg.asterisco ? 'bloqueado' : 'liberado'}** (o bot já apaga mensagem com \`*\` na mão).`);
+          cfg.asterisco = low === 'on' || low === 'ligar';
+          return void await sincronizar(`asterisco: **${cfg.asterisco ? 'bloqueado' : 'liberado'}**.`);
+        }
+        if (sub === 'timeout') {
+          const n = parseInt(low, 10);
+          if (isNaN(n) || n < 0) return void await dizer('usa `.automod timeout <segundos>` (0 = só bloqueia a mensagem). máximo 4 semanas.');
+          cfg.timeoutSegundos = Math.min(2419200, n);
+          return void await sincronizar(`timeout do automod: **${cfg.timeoutSegundos}s** (0 = só bloqueia; só vale pra palavra/regex/menção).`);
+        }
+        if (sub === 'castigo') {
+          const [a1, a2] = low.split(/\s+/);
+          const blocos = parseInt(a1, 10);
+          if (isNaN(blocos)) return void await dizer('usa `.automod castigo <bloqueios> [minutos]` — ex: `.automod castigo 3 10`');
+          cfg.castigo.blocos = Math.max(1, Math.min(50, blocos));
+          if (!isNaN(parseInt(a2, 10))) cfg.castigo.janelaMin = Math.max(1, Math.min(1440, parseInt(a2, 10)));
+          return void await sincronizar(`castigo: **${cfg.castigo.blocos} bloqueio(s) em ${cfg.castigo.janelaMin}min** → timeout progressivo (1h, 2h, 3h...).`);
+        }
+        if (sub === 'alertas' || sub === 'alerta') {
+          if (low === 'off' || low === '0') { cfg.canalAlertas = ''; return void await sincronizar('alertas do automod: **off**.'); }
+          const ch = m.mentions.channels.first() || m.guild.channels.cache.get(arg.replace(/[<#>]/g, ''));
+          if (!ch) return void await dizer('marca o canal: `.automod alertas #mod-log` (ou `off`).');
+          cfg.canalAlertas = ch.id;
+          return void await sincronizar(`o discord vai postar o que bloqueou em <#${ch.id}>.`);
+        }
+        if (sub === 'canal' || sub === 'cargo') {
+          if (low === 'limpar' || low === 'reset' || low === 'off') {
+            if (sub === 'cargo') cfg.cargosImunes = []; else cfg.canaisImunes = [];
+            return void await sincronizar(`imunes: lista de ${sub === 'cargo' ? 'cargos' : 'canais'} zerada.`);
+          }
+          const alvo = sub === 'cargo' ? m.mentions.roles.first() : m.mentions.channels.first();
+          if (!alvo) return void await dizer(`marca o ${sub}: \`.automod ${sub} @cargo\` (ou \`limpar\`).`);
+          const lista = sub === 'cargo' ? cfg.cargosImunes : cfg.canaisImunes;
+          if (!lista.includes(alvo.id)) lista.push(alvo.id);
+          return void await sincronizar(`imune: ${sub === 'cargo' ? `<@&${alvo.id}>` : `<#${alvo.id}>`} passa por cima de todas as regras do bot.`);
+        }
+        return void await dizer('não entendi. manda `.automod ajuda`.' + '\n\n' + AJUDA);
+      } catch (e) {
+        err(e);
+        return void await dizer('.automod falhou: ' + (e.message || e) + '\n-# o bot precisa da permissão **Gerenciar Servidor** pra mexer no automod.');
+      }
+    }
     // .att [arquivo] — sobe o arquivo pro repo do GitHub e religa com o codigo novo (só no bot hospedado)
     if (c === '.att' || c.startsWith('.att ')) {
       const att = m.attachments.first();
@@ -580,26 +801,40 @@ client.on('messageCreate', async (m) => {
   }
 
 async function aplicarCastigo(m, motivo) {
+  return castigar(m.guild, m.author.id, motivo, { member: m.member, canal: m.channel });
+}
+
+// castigo progressivo (serve pro filtro do bot E pro automod): 1h, 2h, 3h...
+// funciona so com o id do cara — o automod bloqueia a mensagem antes dela chegar,
+// entao o castigo de la nao tem Message nenhuma pra usar
+async function castigar(guild, userId, motivo, opts = {}) {
   const st = readJsonSafe(MUTE_STATE, {});
-  const rec = st[m.author.id] || { level: 0, until: 0 };
-  if (Date.now() < rec.until) return; // ja esta de castigo agora
+  const rec = st[userId] || { level: 0, until: 0 };
+  if (Date.now() < rec.until) return null; // ja esta de castigo agora
   rec.level += 1;
   const horas = rec.level;
   rec.until = Date.now() + horas * MUTE_BASE_MS;
-  st[m.author.id] = rec;
+  st[userId] = rec;
   fs.writeFileSync(MUTE_STATE, JSON.stringify(st, null, 2));
-  repStreak.delete(m.author.id);
-  linkBuf.delete(m.author.id);
+  repStreak.delete(userId);
+  linkBuf.delete(userId);
+  const membro = opts.member || (guild ? await guild.members.fetch(userId).catch(() => null) : null);
   const aviso = `Você tomou castigo de ${horas} hora${horas > 1 ? 's' : ''}. Caso continue floodando, o tempo aumentará pra ${horas + 1} horas e assim consecutivamente.`;
   try {
-    await m.member.timeout(horas * MUTE_BASE_MS, 'flood: ' + motivo);
-    log('CASTIGO', { author: m.author.id, horas, motivo });
+    if (membro) await membro.timeout(horas * MUTE_BASE_MS, 'flood: ' + motivo);
+    log('CASTIGO', { author: userId, horas, motivo });
   } catch (e) { err(e); }
   // aviso so pra pessoa: o Discord nao deixa mensagem invisivel solta, entao vai por DM (privada)
-  await m.author.send(aviso).catch(async () => {
-    const tmp = await whSend(m.channel, `${m.author} ${aviso}`).catch(() => null);
-    if (tmp) setTimeout(() => tmp.delete().catch(() => {}), 15000);
-  });
+  const alvo = membro || await client.users.fetch(userId).catch(() => null);
+  const dmOk = alvo ? await alvo.send(aviso).then(() => true).catch(() => false) : false;
+  if (!dmOk) {
+    const ch = opts.canal || (opts.channelId && guild ? await guild.channels.fetch(opts.channelId).catch(() => null) : null);
+    if (ch) {
+      const tmp = await whSend(ch, `<@${userId}> ${aviso}`).catch(() => null);
+      if (tmp) setTimeout(() => tmp.delete().catch(() => {}), 15000);
+    }
+  }
+  return { horas, aviso };
 }
 
 // varre os canais ao ligar: apaga sobra de flood/repetida/invisivel que passou durante o gap do restart
@@ -770,6 +1005,42 @@ async function varrerLinks() {
   } catch (e) {
     err(e);
   }
+});
+
+// ---------- automod nativo: o discord conta pro bot o que ele bloqueou ----------
+// mensagem bloqueada NAO vira evento de mensagem (ela nunca chegou a existir no
+// canal), entao esse evento e o unico jeito de saber o que rolou + punir quem insiste
+client.on('autoModerationActionExecution', async (a) => {
+  try {
+    if (!a.guild || !a.userId) return;
+    const regra = (a.autoModerationRule && a.autoModerationRule.name) || String(a.ruleId);
+    const bloqueou = !!(a.action && a.action.type === 1); // 1 = BLOCK_MESSAGE
+    const texto = String(a.content || '');
+    append(INBOX, {
+      ts: new Date().toISOString(),
+      id: null,
+      author: a.user ? a.user.tag : a.userId,
+      authorId: a.userId,
+      where: `automod:${regra}`,
+      channelId: a.channelId || null,
+      content: texto,
+      automod: { regra, gatilho: a.ruleTriggerType, keyword: a.matchedKeyword, bloqueado: bloqueou },
+    });
+    log('AUTOMOD_BLOCK', { regra, autor: a.userId, canal: a.channelId, keyword: a.matchedKeyword, bloqueado: bloqueou, content: texto.slice(0, 120) });
+
+    if (!String(regra).startsWith(automod.PREFIXO)) return; // regra feita a mao no painel: so registra
+    const cfg = automod.ler();
+    const janelaMs = Math.max(1, Number((cfg.castigo && cfg.castigo.janelaMin) || 10)) * 60 * 1000;
+    const minimo = Math.max(1, Number((cfg.castigo && cfg.castigo.blocos) || 3));
+    const now = Date.now();
+    const arr = (automodBlocks.get(a.userId) || []).filter((t) => now - t < janelaMs);
+    arr.push(now);
+    automodBlocks.set(a.userId, arr);
+    if (arr.length >= minimo) {
+      automodBlocks.delete(a.userId);
+      await castigar(a.guild, a.userId, `automod: ${regra}`, { member: a.member, channelId: a.channelId });
+    }
+  } catch (e) { err(e); }
 });
 
 client.on('interactionCreate', async (i) => {
