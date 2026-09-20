@@ -284,6 +284,9 @@ async function avisarDono(texto) {
 
 let automodUltimoResumo = '';
 async function automodSync(tag) {
+  // espera o estado do repo chegar antes de mexer nas regras: sincronizar com a
+  // config local (vazia) apagaria regra que na verdade ainda existe
+  await ghStatePronto.catch(() => {});
   const cfg = automod.ler();
   for (const gid of INFERNO_GUILDS) {
     const g = client.guilds.cache.get(gid);
@@ -296,11 +299,11 @@ async function automodSync(tag) {
     // diario no automod_status.json (vai pro repo): da pra conferir de fora se as
     // regras existem mesmo no servidor e qual foi o ultimo erro
     const errosAntes = (automod.statusDe(gid) || {}).erros || [];
-    automod.registrarStatus(gid, { on: cfg.on, permiteGerenciar: automod.podeGerenciar(g), criadas: r.criadas, ligadas: r.ligadas, desligadas: r.desligadas, adotadas: r.adotadas, avisos: r.avisos, erros: r.erros, regras });
+    automod.registrarStatus(gid, { on: cfg.on, permiteGerenciar: automod.podeGerenciar(g), criadas: r.criadas, ligadas: r.ligadas, removidas: r.removidas, adotadas: r.adotadas, avisos: r.avisos, erros: r.erros, regras });
     const novosErros = r.erros.filter((e) => !errosAntes.includes(e));
     if (novosErros.length) avisarDono(`automod (servidor ${gid}) deu erro:\n${novosErros.join('\n')}`).catch(err);
 
-    const resumo = { guild: gid, on: cfg.on, criadas: r.criadas, ligadas: r.ligadas, ok: r.ok.length, off: r.off, desligadas: r.desligadas, adotadas: r.adotadas, avisos: r.avisos, erros: r.erros };
+    const resumo = { guild: gid, on: cfg.on, criadas: r.criadas, ligadas: r.ligadas, ok: r.ok.length, off: r.off, removidas: r.removidas, adotadas: r.adotadas, avisos: r.avisos, erros: r.erros };
     const json = JSON.stringify(resumo);
     if (json !== automodUltimoResumo) { // so loga quando muda, senao a cada 10min enchia o log
       log('AUTOMOD_SYNC', { tag, ...resumo });
@@ -396,7 +399,7 @@ async function ghStateSyncTick() {
     } catch (e) { err(e); delete ghLastMtime[f]; }
   }
 }
-ghStateLoad();
+const ghStatePronto = ghStateLoad();
 setInterval(ghStateSyncTick, 60 * 1000);
 
 const figState = new Map(); // guildId -> { msgId, lines: [] }
@@ -566,7 +569,7 @@ client.on('messageCreate', async (m) => {
         if (r.criadas && r.criadas.length) linhas.push('criadas/atualizadas: ' + r.criadas.join(', '));
         if (r.ligadas && r.ligadas.length) linhas.push('religadas: ' + r.ligadas.join(', '));
         if (r.off && r.off.length) linhas.push('desligadas: ' + r.off.join(', '));
-        if (r.desligadas && r.desligadas.length) linhas.push('desligadas (nao tem mais o que bloquear): ' + r.desligadas.join(', '));
+        if (r.removidas && r.removidas.length) linhas.push('apagadas (regra do bot sem uso): ' + r.removidas.join(', '));
         if (r.adotadas && r.adotadas.length) linhas.push('achei regra feita na mão e usei ela: ' + r.adotadas.join(', '));
         if (r.avisos && r.avisos.length) linhas.push('avisos: ' + r.avisos.join(' | '));
         if (r.erros && r.erros.length) linhas.push('erros: ' + r.erros.join(' | '));
@@ -591,6 +594,7 @@ client.on('messageCreate', async (m) => {
         '**`.automod regex <padrão>`** até 10 (sem retrovisor tipo \\1)',
         '**`.automod regex del <n>`**  •  **`.automod regex lista`**',
         '**`.automod asterisco on|off`** bloqueia quem usa `*` quebrado',
+        '**`.automod compacto on|off`** junta link+palavras+regex numa regra só (cabe em 1 vaga)',
         '**`.automod timeout 600`** o próprio automod dá timeout (0 = só bloqueia)',
         '**`.automod castigo 3 10`** 3 bloqueios em 10min = castigo progressivo do bot',
         '**`.automod alertas #canal`** o Discord posta lá o que bloqueou (ou `off`)',
@@ -623,7 +627,7 @@ client.on('messageCreate', async (m) => {
           return void await dizer([
             '# AutoMod',
             cfg.on ? 'estado no arquivo: **ligado**' : 'estado no arquivo: **desligado**',
-            `timeout do automod: **${cfg.timeoutSegundos || 0}s** • castigo: **${cfg.castigo.blocos} bloqueio(s) em ${cfg.castigo.janelaMin}min**`,
+            `modo: **${cfg.compacto !== false ? 'compacto (1 regra)' : 'separado'}** • timeout do automod: **${cfg.timeoutSegundos || 0}s** • castigo: **${cfg.castigo.blocos} bloqueio(s) em ${cfg.castigo.janelaMin}min**`,
             `palavras: **${cfg.palavras.length}** • regex: **${cfg.regex.length}** • alertas: ${cfg.canalAlertas ? `<#${cfg.canalAlertas}>` : 'off'}`,
             '',
             corpo,
@@ -693,6 +697,11 @@ client.on('messageCreate', async (m) => {
           if (!low) return void await dizer(`asterisco está **${cfg.asterisco ? 'bloqueado' : 'liberado'}** (o bot já apaga mensagem com \`*\` na mão).`);
           cfg.asterisco = low === 'on' || low === 'ligar';
           return void await sincronizar(`asterisco: **${cfg.asterisco ? 'bloqueado' : 'liberado'}**.`);
+        }
+        if (sub === 'compacto') {
+          if (!low) return void await dizer(`modo compacto está **${cfg.compacto !== false ? 'ligado' : 'desligado'}** (ligado = link+palavras+regex+asterisco numa regra só, ocupa 1 vaga em vez de 4).`);
+          cfg.compacto = low === 'on' || low === 'ligar';
+          return void await sincronizar(`modo compacto: **${cfg.compacto ? 'ligado' : 'desligado'}**.`);
         }
         if (sub === 'timeout') {
           const n = parseInt(low, 10);

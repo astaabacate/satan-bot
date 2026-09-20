@@ -54,6 +54,7 @@ const PADRAO = {
   cargosImunes: [],                          // cargos que passam direto
   canaisImunes: [],                          // canais que nao tem automod
   canalAlertas: '',                          // canal onde o discord posta o que foi bloqueado
+  compacto: true,                            // junta link+palavras+regex numa regra so (o discord so deixa 6)
 };
 
 const AVISO_PADRAO = {
@@ -63,6 +64,7 @@ const AVISO_PADRAO = {
   palavras: 'mensagem bloqueada pela lista de palavras.',
   regex: 'mensagem bloqueada pelas regras do servidor.',
   asterisco: 'asterisco bloqueado. tira o * da mensagem (** ~~ ~).',
+  filtro: 'bloqueado pelo automod: palavra, link ou padrao proibido.',
 };
 
 const PALAVRAS_LINK = [
@@ -220,36 +222,60 @@ function definicoes(cfg, guild) {
     });
   }
 
-  if (cfg.links && cfg.links.on) {
+  const linksOn = !!(cfg.links && cfg.links.on);
+  const permitidos = linksOn ? limparPalavras(cfg.links.permitidos).slice(0, 100) : []; // allow_list: max 100
+  const palavras = limparPalavras(cfg.palavras);
+  const regex = limparRegex(cfg.regex);
+  const temTimeout = tSeg > 0 && podeTimeout(guild);
+
+  if (cfg.compacto !== false) {
+    // uma regra so pro filtro inteiro: o discord deixa no maximo 6 regras de
+    // palavra por servidor, entao juntar tudo em 1 e o que faz caber
+    const keywordFilter = [...(linksOn ? PALAVRAS_LINK : []), ...palavras].slice(0, MAX_PALAVRAS);
+    const regexPatterns = [...regex, ...(cfg.asterisco ? ['\\*'] : [])].slice(0, MAX_REGEX);
+    if (keywordFilter.length || regexPatterns.length) {
+      defs.push({
+        chave: 'filtro',
+        nome: 'filtro',
+        triggerType: TRIGGER.Keyword,
+        triggerMetadata: {
+          ...(keywordFilter.length ? { keywordFilter } : {}),
+          ...(regexPatterns.length ? { regexPatterns } : {}),
+          ...(permitidos.length ? { allowList: permitidos } : {}),
+        },
+        actions: [bloqueio(aviso.filtro), ...(temTimeout ? [timeouts(tSeg)] : []), ...extra],
+      });
+    }
+    return defs;
+  }
+
+  if (linksOn) {
     defs.push({
       chave: 'links',
       nome: 'links',
       triggerType: TRIGGER.Keyword,
-      // allow_list aceita no maximo 100 itens (limite do discord)
-      triggerMetadata: { keywordFilter: PALAVRAS_LINK, allowList: limparPalavras(cfg.links.permitidos).slice(0, 100) },
-      actions: [bloqueio(aviso.links), ...(tSeg > 0 && podeTimeout(guild) ? [timeouts(tSeg)] : []), ...extra],
+      triggerMetadata: { keywordFilter: PALAVRAS_LINK, allowList: permitidos },
+      actions: [bloqueio(aviso.links), ...(temTimeout ? [timeouts(tSeg)] : []), ...extra],
     });
   }
 
-  const palavras = limparPalavras(cfg.palavras);
   if (palavras.length) {
     defs.push({
       chave: 'palavras',
       nome: 'palavras',
       triggerType: TRIGGER.Keyword,
       triggerMetadata: { keywordFilter: palavras },
-      actions: [bloqueio(aviso.palavras), ...(tSeg > 0 && podeTimeout(guild) ? [timeouts(tSeg)] : []), ...extra],
+      actions: [bloqueio(aviso.palavras), ...(temTimeout ? [timeouts(tSeg)] : []), ...extra],
     });
   }
 
-  const regex = limparRegex(cfg.regex);
   if (regex.length) {
     defs.push({
       chave: 'regex',
       nome: 'regex',
       triggerType: TRIGGER.Keyword,
       triggerMetadata: { regexPatterns: regex },
-      actions: [bloqueio(aviso.regex), ...(tSeg > 0 && podeTimeout(guild) ? [timeouts(tSeg)] : []), ...extra],
+      actions: [bloqueio(aviso.regex), ...(temTimeout ? [timeouts(tSeg)] : []), ...extra],
     });
   }
 
@@ -302,7 +328,7 @@ function igual(existente, def, extraCargos, extraCanais) {
 // cfg.on = true  -> cria/liga/atualiza as regras
 // cfg.on = false -> desliga so as regras [satan] (nao apaga nada)
 async function sincronizar(guild, cfg = ler(), opts = {}) {
-  const out = { criadas: [], ligadas: [], ok: [], erros: [], off: [], desligadas: [], adotadas: [], avisos: [] };
+  const out = { criadas: [], ligadas: [], ok: [], erros: [], off: [], removidas: [], adotadas: [], avisos: [] };
   if (!guild) { out.erros.push('sem guild'); return out; }
   if (!podeGerenciar(guild)) {
     out.erros.push('o bot nao tem a permissao "Gerenciar Servidor" nesse servidor');
@@ -367,7 +393,7 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
 
       // palavra: o discord permite no maximo 6 regras desse tipo por servidor
       if (!existente && !def.unico && def.triggerType === TRIGGER.Keyword && keywordCount >= 6) {
-        out.avisos.push(`limite de 6 regras de palavra do discord atingido — "${nome}" nao coube (apaga uma regra manual pra caber)`);
+        out.avisos.push(`o servidor ja tem as 6 regras de palavra que o discord permite e nenhuma e do bot — "${nome}" nao coube. apaga/desliga uma regra manual no painel do discord que o bot cria a dele sozinho (ou usa .automod compacto on pra ocupar so 1 vaga)`);
         continue;
       }
 
@@ -409,15 +435,16 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
     }
   }
 
-  // regra que o bot criou e nao tem mais o que bloquear (lista de palavras/regex
-  // esvaziou, links/asterisco desligado) NAO pode continuar ligada com o texto
-  // antigo gravado dentro dela
+  // regra do bot que nao tem mais o que bloquear (lista esvaziou, mudou pro modo
+  // compacto...). APAGA de vez: regra desativada continuaria ocupando uma das
+  // (poucas) vagas do discord, e a config no automod_config.json e a fonte da
+  // verdade — se voltar a ter conteudo, o bot cria ela de novo
   const desejados = new Set(defs.map((d) => PREFIXO + d.nome));
   for (const r of minhas) {
-    if (desejados.has(r.name) || !r.enabled) continue;
+    if (desejados.has(r.name)) continue;
     try {
-      await guild.autoModerationRules.edit(r, { enabled: false, reason: 'satan: regra sem uso' });
-      out.desligadas.push(r.name);
+      await guild.autoModerationRules.delete(r, 'satan: regra sem uso');
+      out.removidas.push(r.name);
     } catch (e) { out.erros.push(r.name + ': ' + msg(e)); }
   }
   return out;
