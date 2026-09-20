@@ -273,6 +273,15 @@ automod.usar({ log, err });
 automod.criarSeFaltar();
 const automodBlocks = new Map(); // userId -> [timestamps] de bloqueios recentes do automod
 
+// manda uma DM pro dono (usado quando o automod nao consegue fazer algo)
+async function avisarDono(texto) {
+  try {
+    const u = await client.users.fetch(OWNER_ID);
+    await u.send(texto);
+    log('AVISO_DONO', { texto });
+  } catch (e) { log('AVISO_DONO_FAIL', { err: e && e.message }); }
+}
+
 let automodUltimoResumo = '';
 async function automodSync(tag) {
   const cfg = automod.ler();
@@ -280,6 +289,17 @@ async function automodSync(tag) {
     const g = client.guilds.cache.get(gid);
     if (!g) continue;
     const r = await automod.sincronizar(g, cfg);
+    let regras = [];
+    try {
+      regras = (await automod.listar(g)).map((x) => ({ nome: x.nome, nosso: x.nosso, on: x.on, gatilho: x.gatilho, acoes: x.acoes }));
+    } catch (e) { err(e); }
+    // diario no automod_status.json (vai pro repo): da pra conferir de fora se as
+    // regras existem mesmo no servidor e qual foi o ultimo erro
+    const errosAntes = (automod.statusDe(gid) || {}).erros || [];
+    automod.registrarStatus(gid, { on: cfg.on, permiteGerenciar: automod.podeGerenciar(g), criadas: r.criadas, ligadas: r.ligadas, desligadas: r.desligadas, adotadas: r.adotadas, avisos: r.avisos, erros: r.erros, regras });
+    const novosErros = r.erros.filter((e) => !errosAntes.includes(e));
+    if (novosErros.length) avisarDono(`automod (servidor ${gid}) deu erro:\n${novosErros.join('\n')}`).catch(err);
+
     const resumo = { guild: gid, on: cfg.on, criadas: r.criadas, ligadas: r.ligadas, ok: r.ok.length, off: r.off, desligadas: r.desligadas, adotadas: r.adotadas, avisos: r.avisos, erros: r.erros };
     const json = JSON.stringify(resumo);
     if (json !== automodUltimoResumo) { // so loga quando muda, senao a cada 10min enchia o log
@@ -340,7 +360,7 @@ client.on('guildMemberAdd', async (member) => {
 });
 
 // ---------- estado persistente no repo GitHub (sobrevive a religadas/updates) ----------
-const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'automod_config.json'];
+const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'automod_config.json', 'automod_status.json'];
 async function ghStateLoad() {
   const tok = process.env.GITHUB_TOKEN, repo = process.env.GITHUB_REPOSITORY;
   if (!tok || !repo) return;
