@@ -25,6 +25,7 @@ const {
 
 const PREFIXO = '[satan] ';
 const ARQUIVO = path.join(__dirname, 'automod_config.json');
+const ARQUIVO_STATUS = path.join(__dirname, 'automod_status.json'); // so leitura: ultima sincronizacao
 const LIMITE_TIMEOUT = 2419200; // 4 semanas (limite do discord)
 const MAX_REGEX = 10;
 const MAX_PALAVRAS = 1000;
@@ -97,6 +98,34 @@ function salvar(cfg) {
 
 function criarSeFaltar() {
   try { if (!fs.existsSync(ARQUIVO)) salvar(PADRAO); } catch (e) { _err(e); }
+}
+
+// ---------- diario da ultima sincronizacao ----------
+// gravado so quando alguma coisa muda (senao viraria commit a cada 10min) e
+// sincronizado no repo junto com o resto do estado: da pra ver de fora se as
+// regras realmente existem no servidor e qual foi o ultimo erro
+function lerStatus() {
+  try { return JSON.parse(fs.readFileSync(ARQUIVO_STATUS, 'utf8')); } catch { return {}; }
+}
+
+function statusDe(guildId) {
+  const st = lerStatus();
+  return (st.guildas && st.guildas[guildId]) || null;
+}
+
+function registrarStatus(guildId, dados) {
+  try {
+    const st = lerStatus();
+    st.guildas = st.guildas || {};
+    const antes = st.guildas[guildId] ? { ...st.guildas[guildId], atualizadoEm: undefined } : null;
+    const agora = new Date().toISOString();
+    const novo = { ...dados, atualizadoEm: agora };
+    if (JSON.stringify(antes) === JSON.stringify({ ...novo, atualizadoEm: undefined })) return false; // nada mudou
+    st.guildas[guildId] = novo;
+    st.atualizadoEm = agora;
+    fs.writeFileSync(ARQUIVO_STATUS, JSON.stringify(st, null, 2));
+    return true;
+  } catch (e) { _err(e); return false; }
 }
 
 // ---------------- limpeza das listas ----------------
@@ -434,6 +463,7 @@ async function listar(guild) {
 module.exports = {
   PREFIXO,
   ARQUIVO,
+  ARQUIVO_STATUS,
   PADRAO,
   AVISO_PADRAO,
   PALAVRAS_LINK,
@@ -441,6 +471,9 @@ module.exports = {
   ler,
   salvar,
   criarSeFaltar,
+  lerStatus,
+  statusDe,
+  registrarStatus,
   sincronizar,
   apagar,
   listar,
