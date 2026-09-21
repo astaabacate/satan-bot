@@ -248,6 +248,29 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
+async function limparAutomodNativo() {
+  for (const gid of INFERNO_GUILDS) {
+    const g = client.guilds.cache.get(gid);
+    if (!g) continue;
+    const me = g.members.me;
+    if (!me || !me.permissions.has(PermissionFlagsBits.ManageGuild)) {
+      log('AUTOMOD_LIMPO_SKIP', { guild: gid, motivo: 'sem Gerenciar Servidor' });
+      continue;
+    }
+    let regras;
+    try { regras = await g.autoModerationRules.fetch(); }
+    catch (e) { err(e); continue; }
+    for (const r of regras.values()) {
+      const nome = String(r.name || '');
+      if (!nome.startsWith('[satan] ')) continue;
+      try {
+        await g.autoModerationRules.delete(r, 'satan: automod nativo desligado');
+        log('AUTOMOD_LIMPO', { guild: gid, nome });
+      } catch (e) { err(e); }
+    }
+  }
+}
+
 client.once('ready', async () => {
   log('READY', { user: client.user.tag, id: client.user.id, guilds: client.guilds.cache.size });
   client.user.setActivity('o sofrimento dos condenados', { type: 3 });
