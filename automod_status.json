@@ -16,13 +16,6 @@
       "erros": [],
       "regras": [
         {
-          "nome": "selo0",
-          "nosso": false,
-          "on": true,
-          "gatilho": "palavra",
-          "acoes": "bloqueia"
-        },
-        {
           "nome": "selo1",
           "nosso": false,
           "on": true,
@@ -70,10 +63,17 @@
           "on": true,
           "gatilho": "mencoes",
           "acoes": "bloqueia"
+        },
+        {
+          "nome": "selo0",
+          "nosso": false,
+          "on": true,
+          "gatilho": "palavra",
+          "acoes": "bloqueia"
         }
       ],
-      "atualizadoEm": "2026-09-21T00:20:46.655Z"
+      "atualizadoEm": "2026-09-21T00:30:30.456Z"
     }
   },
-  "atualizadoEm": "2026-09-21T00:20:46.655Z"
+  "atualizadoEm": "2026-09-21T00:30:30.456Z"
 }
