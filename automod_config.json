@@ -21,5 +21,37 @@
   "aviso": {},
   "cargosImunes": [],
   "canaisImunes": [],
-  "canalAlertas": ""
+  "canalAlertas": "",
+  "compacto": true,
+  "absorvida": {
+    "1484007517091528914": {
+      "id": "1548789569783074868",
+      "nome": "selo0",
+      "eventType": 1,
+      "triggerType": 1,
+      "triggerMetadata": {
+        "keywordFilter": [
+          "zzselo89140zz"
+        ],
+        "regexPatterns": [],
+        "presets": [],
+        "allowList": [],
+        "mentionTotalLimit": null,
+        "mentionRaidProtectionEnabled": false
+      },
+      "actions": [
+        {
+          "type": 1,
+          "metadata": {
+            "durationSeconds": null,
+            "channelId": null,
+            "customMessage": null
+          }
+        }
+      ],
+      "enabled": true,
+      "exemptRoles": [],
+      "exemptChannels": []
+    }
+  }
 }
