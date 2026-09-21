@@ -468,7 +468,7 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
         if (manual) {
           const nomeOriginal = manual.name;
           const snapshot = snapshotRegra(manual);
-          await guild.autoModerationRules.edit(manual, {
+          const payloadFiltro = {
             name: nome,
             eventType: EVENTO.MessageSend,
             triggerMetadata: def.triggerMetadata,
@@ -477,7 +477,25 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
             exemptRoles: cargos,
             exemptChannels: canais,
             reason: 'satan: assumindo vaga de regra manual',
-          });
+          };
+          try {
+            // PATCH e o caminho normal: a regra ja e KEYWORD, entao basta
+            // trocar nome, conteudo e acoes (triggerType nao e editavel).
+            await guild.autoModerationRules.edit(manual, payloadFiltro);
+          } catch (e) {
+            // Algumas respostas da API tratam essa alteracao como se fosse
+            // criacao de uma sétima regra. Libera a vaga e recria o filtro;
+            // as outras cinco regras continuam intocadas.
+            if (!/maximum|max\b|limit|limite|rate/i.test(msg(e))) throw e;
+            await guild.autoModerationRules.delete(manual, 'satan: liberando vaga para o filtro');
+            try {
+              await guild.autoModerationRules.create({ ...payloadFiltro, triggerType: TRIGGER.Keyword });
+            } catch (e2) {
+              // Nao deixa a regra antiga perdida se o segundo passo falhar.
+              await guild.autoModerationRules.create(payloadOriginal(snapshot)).catch(() => {});
+              throw e2;
+            }
+          }
           guardarSnapshot(cfg, guild.id, manual, snapshot);
           // Alguns mocks e algumas versoes do discord.js nao atualizam o
           // objeto local retornado pelo fetch depois do edit.
