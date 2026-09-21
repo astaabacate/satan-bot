@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { Client, GatewayIntentBits, Partials, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { figCreate } = require('./fig.js');
 
 // token vem do .env ao lado — nao precisa de variavel de ambiente nem de chave na mao
@@ -248,35 +248,11 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message],
 });
 
-async function limparAutomodNativo() {
-  for (const gid of INFERNO_GUILDS) {
-    const g = client.guilds.cache.get(gid);
-    if (!g) continue;
-    const me = g.members.me;
-    if (!me || !me.permissions.has(PermissionFlagsBits.ManageGuild)) {
-      log('AUTOMOD_LIMPO_SKIP', { guild: gid, motivo: 'sem Gerenciar Servidor' });
-      continue;
-    }
-    let regras;
-    try { regras = await g.autoModerationRules.fetch(); }
-    catch (e) { err(e); continue; }
-    for (const r of regras.values()) {
-      const nome = String(r.name || '');
-      if (!nome.startsWith('[satan] ')) continue;
-      try {
-        await g.autoModerationRules.delete(r, 'satan: automod nativo desligado');
-        log('AUTOMOD_LIMPO', { guild: gid, nome });
-      } catch (e) { err(e); }
-    }
-  }
-}
-
 client.once('ready', async () => {
   log('READY', { user: client.user.tag, id: client.user.id, guilds: client.guilds.cache.size });
   client.user.setActivity('o sofrimento dos condenados', { type: 3 });
   if (typeof varrerLinks === 'function') varrerLinks().catch(err); else err(new Error('varrerLinks ausente no ready'));
   if (typeof varrerFlood === 'function') varrerFlood().catch(err); else err(new Error('varrerFlood ausente no ready'));
-  limparAutomodNativo().catch(err);
   (async () => {
     const stN = readJsonSafe(NUKE_STATE, {});
     if (stN && stN.on === true && stN.nextAt) {
