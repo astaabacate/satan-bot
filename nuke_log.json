@@ -1,51 +1,9 @@
 {
-  "quando": "2026-09-21T01:56:08.870Z",
-  "confAchado": "1551396441556000798",
+  "quando": "2026-09-21T02:57:08.896Z",
+  "confAchado": "1551411687025025075",
   "confDelete": "ok",
-  "confCreate": "1551411687025025075",
+  "confCreate": "1551427037275623535",
   "anuncio": "ok",
-  "calls": [
-    {
-      "canal": "purgatorio",
-      "apagadas": 8
-    },
-    {
-      "canal": "gf",
-      "apagadas": 0
-    },
-    {
-      "canal": "gf",
-      "apagadas": 0
-    },
-    {
-      "canal": "conclave",
-      "apagadas": 0
-    },
-    {
-      "canal": "ritual",
-      "apagadas": 10
-    },
-    {
-      "canal": "tormento",
-      "apagadas": 0
-    },
-    {
-      "canal": "sacrificio",
-      "apagadas": 0
-    },
-    {
-      "canal": "santuario",
-      "apagadas": 0
-    },
-    {
-      "canal": "apocalipse",
-      "apagadas": 0
-    },
-    {
-      "canal": "caos",
-      "apagadas": 0
-    }
-  ],
-  "erros": [],
-  "totalMsgs": 18
+  "calls": [],
+  "erros": []
 }
