@@ -81,8 +81,8 @@ const PALAVRAS_LINK = [
 // O filtro nativo precisa pegar tambem o que antes era tratado somente no
 // messageCreate. Sao regex Rust validas no AutoMod do Discord; as tres ficam
 // sempre na regra compacta para que o bot nao dependa de comando ou config.
-const REGEX_GIGANTE = '(?s)^.{501,}$';
-const REGEX_INVISIVEL = String.raw`^[\s\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2800\u3164\ufeff\ufe00-\ufe0f\ufff0-\ufff8\ufffe\uffff\u{e0000}-\u{e007f}]+$`;
+const REGEX_GIGANTE = String.raw`^[\s\S]{501,}$`;
+const REGEX_INVISIVEL = String.raw`^[\s\u200b-\u200f\u2060-\u2064\u2800\u3164\ufeff\ufe00-\ufe0f]+$`;
 const REGEX_ASTERISCO = String.raw`\*`;
 const REGEX_NATIVOS = [REGEX_GIGANTE, REGEX_INVISIVEL, REGEX_ASTERISCO];
 
@@ -502,7 +502,9 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
             if (!criado) {
               // Nao deixa a regra antiga perdida se o segundo passo falhar.
               await guild.autoModerationRules.create(payloadOriginal(snapshot)).catch(() => {});
-              throw ultimoErro;
+              const falha = new Error('absorver regra: ' + msg(ultimoErro));
+              falha.automodAbsorcao = true;
+              throw falha;
             }
           }
           guardarSnapshot(cfg, guild.id, manual, snapshot);
@@ -556,7 +558,7 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
       }
     } catch (e) {
       const m = msg(e);
-      if (/maximum|max\b|limit|limite/i.test(m) && def.triggerType === TRIGGER.Keyword) {
+      if (!e.automodAbsorcao && /maximum|max\b|limit|limite/i.test(m) && def.triggerType === TRIGGER.Keyword) {
         // servidor cheio de regras de palavra: nao e erro do bot, e o limite do discord
         out.avisos.push(`o discord recusou "${nome}" por limite de regras — apaga/desliga uma regra manual no painel do discord que o bot cria a dele sozinho`);
       } else {
