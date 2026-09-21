@@ -369,9 +369,8 @@ function absorvidaDe(cfg, guildId) {
   return todas && ehObj(todas) ? todas[guildId] || null : null;
 }
 
-function guardarSnapshot(cfg, guildId, regra) {
+function guardarSnapshot(cfg, guildId, regra, snap = snapshotRegra(regra)) {
   if (!ehObj(cfg.absorvida)) cfg.absorvida = {};
-  const snap = snapshotRegra(regra);
   cfg.absorvida[guildId] = snap;
   return snap;
 }
@@ -468,11 +467,10 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
         const manual = porGatilho(TRIGGER.Keyword).find((r) => !String(r.name || '').startsWith(PREFIXO));
         if (manual) {
           const nomeOriginal = manual.name;
-          guardarSnapshot(cfg, guild.id, manual);
+          const snapshot = snapshotRegra(manual);
           await guild.autoModerationRules.edit(manual, {
             name: nome,
             eventType: EVENTO.MessageSend,
-            triggerType: def.triggerType,
             triggerMetadata: def.triggerMetadata,
             actions: def.actions,
             enabled: true,
@@ -480,6 +478,7 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
             exemptChannels: canais,
             reason: 'satan: assumindo vaga de regra manual',
           });
+          guardarSnapshot(cfg, guild.id, manual, snapshot);
           // Alguns mocks e algumas versoes do discord.js nao atualizam o
           // objeto local retornado pelo fetch depois do edit.
           manual.name = nome;
