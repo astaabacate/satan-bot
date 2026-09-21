@@ -16,13 +16,6 @@
       ],
       "regras": [
         {
-          "nome": "selo3",
-          "nosso": false,
-          "on": true,
-          "gatilho": "palavra",
-          "acoes": "bloqueia"
-        },
-        {
           "nome": "selo4",
           "nosso": false,
           "on": true,
@@ -70,10 +63,17 @@
           "on": true,
           "gatilho": "palavra",
           "acoes": "bloqueia"
+        },
+        {
+          "nome": "selo3",
+          "nosso": false,
+          "on": true,
+          "gatilho": "palavra",
+          "acoes": "bloqueia"
         }
       ],
-      "atualizadoEm": "2026-09-21T00:36:04.830Z"
+      "atualizadoEm": "2026-09-21T00:46:03.779Z"
     }
   },
-  "atualizadoEm": "2026-09-21T00:36:04.830Z"
+  "atualizadoEm": "2026-09-21T00:46:03.779Z"
 }
