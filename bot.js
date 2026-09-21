@@ -23,7 +23,7 @@ const ERRORS = path.join(ROOT, 'errors.log');
 // anti-flood (ajustavel via antispam_config.json)
 const ANTIFLOOD_CFG = path.join(ROOT, 'antispam_config.json');
 const RE_INV = /[\s\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2800\u3164\ufeff\ufe00-\ufe0f\ufff0-\ufff8\ufffe\uffff\u{e0000}-\u{e007f}]/gu;
-const ANTIFLOOD_DEFAULT = { chars: 500, windowMs: 6000, max: 5, penaltyMs: 10000, repeatWindowMs: 30000 };
+const ANTIFLOOD_DEFAULT = { chars: 500, windowMs: 6000, max: 5, penaltyMs: 10000, repeatWindowMs: 60000 };
 const floodBuf = new Map();
 const repBuf = new Map();
 const penaltyUntil = new Map();
@@ -680,16 +680,23 @@ async function varrerLinks() {
       }
     }
 
-    // 2) mensagem repetida: compara com as 3 últimas do mesmo autor (pega
-    //    "emoji, emoji" e tambem "emoji1, emoji2, emoji1" alternado)
-    //    assinatura cobre texto, emoji, figurinha, imagem/gif, arquivo e embed
+    // 2) mensagem repetida: qualquer igual na janela de 1 min some TODAS
+    //    (nao so a nova, nao so as 3 ultimas — era assim que burlavam)
     {
       const sig = msgSig(m);
-      const hist = repBuf.get(m.author.id) || [];
-      if (hist.some((h) => h.sig === sig && now - h.ts < cfg.repeatWindowMs)) reasons.push('repetida');
-      hist.push({ sig, ts: now });
-      while (hist.length > 3) hist.shift();
+      const janela = cfg.repeatWindowMs || 60000;
+      const hist = (repBuf.get(m.author.id) || []).filter((h) => now - h.ts < janela);
+      const iguais = hist.filter((h) => h.sig === sig);
+      hist.push({ sig, ts: now, id: m.id, channelId: m.channelId });
       repBuf.set(m.author.id, hist);
+      if (iguais.length) {
+        reasons.push('repetida');
+        for (const h of iguais) {
+          if (!h.id || h.id === m.id) continue;
+          const ch = h.channelId === m.channelId ? m.channel : await m.client.channels.fetch(h.channelId).catch(() => null);
+          if (ch) await ch.messages.delete(h.id).catch(() => {});
+        }
+      }
     }
 
     // 3) penalidade ativa: quem floodou tem tudo apagado durante o cooldown
