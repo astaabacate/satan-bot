@@ -10,18 +10,11 @@
         "selo-preset1"
       ],
       "absorvida": "selo0",
-      "avisos": [
-        "o discord recusou \"[satan] filtro\" por limite de regras — apaga/desliga uma regra manual no painel do discord que o bot cria a dele sozinho"
+      "avisos": [],
+      "erros": [
+        "[satan] filtro: absorver regra: Invalid Form Body\ntrigger_metadata.regex_patterns.^[\\s\\S]{501,}$[AUTO_MODERATION_REGEX_COMPILED_TOO_BIG]: \"^[\\s\\S]{501,}$\" exceeded size limit"
       ],
-      "erros": [],
       "regras": [
-        {
-          "nome": "selo2",
-          "nosso": false,
-          "on": true,
-          "gatilho": "palavra",
-          "acoes": "bloqueia"
-        },
         {
           "nome": "selo3",
           "nosso": false,
@@ -70,10 +63,17 @@
           "on": true,
           "gatilho": "palavra",
           "acoes": "bloqueia"
+        },
+        {
+          "nome": "selo2",
+          "nosso": false,
+          "on": true,
+          "gatilho": "palavra",
+          "acoes": "bloqueia"
         }
       ],
-      "atualizadoEm": "2026-09-21T00:33:03.553Z"
+      "atualizadoEm": "2026-09-21T00:36:04.830Z"
     }
   },
-  "atualizadoEm": "2026-09-21T00:33:03.553Z"
+  "atualizadoEm": "2026-09-21T00:36:04.830Z"
 }
