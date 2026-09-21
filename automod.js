@@ -25,6 +25,8 @@ const ACAO = { BlockMessage: 1, SendAlertMessage: 2, Timeout: 3 };
 const EVENTO = { MessageSend: 1 };
 
 const PREFIXO = '[satan] ';
+const SELOS_ANTIGOS = ['selo0', 'selo1', 'selo2', 'selo3', 'selo4', 'selo5'];
+const SELO_SPAM = 'selo-preset1';
 const ARQUIVO = path.join(__dirname, 'automod_config.json');
 const ARQUIVO_STATUS = path.join(__dirname, 'automod_status.json'); // so leitura: ultima sincronizacao
 const LIMITE_TIMEOUT = 2419200; // 4 semanas (limite do discord)
@@ -78,13 +80,12 @@ const PALAVRAS_LINK = [
   '*dsc.gg/*',
 ];
 
-// O filtro nativo precisa pegar tambem o que antes era tratado somente no
-// messageCreate. Sao regex Rust validas no AutoMod do Discord; as tres ficam
-// sempre na regra compacta para que o bot nao dependa de comando ou config.
-const REGEX_GIGANTE = String.raw`^[\s\S]{501,}$`;
+// Regex nativas que o Discord aceita. NAO usar ^[\s\S]{501,}$: a API recusa
+// com AUTO_MODERATION_REGEX_COMPILED_TOO_BIG. Mensagem >500 chars fica so no
+// filtro antigo do messageCreate — o AutoMod nativo nao cobre isso.
 const REGEX_INVISIVEL = String.raw`^[\s\u200b-\u200f\u2060-\u2064\u2800\u3164\ufeff\ufe00-\ufe0f]+$`;
-const REGEX_ASTERISCO = String.raw`\*`;
-const REGEX_NATIVOS = [REGEX_GIGANTE, REGEX_INVISIVEL, REGEX_ASTERISCO];
+const REGEX_ASTERISCO = String.raw`\\*`;
+const REGEX_NATIVOS = [REGEX_INVISIVEL, REGEX_ASTERISCO];
 
 // ---------------- config ----------------
 function ehObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -242,8 +243,8 @@ function definicoes(cfg, guild) {
     // uma regra so pro filtro inteiro: o discord deixa no maximo 6 regras de
     // palavra por servidor, entao juntar tudo em 1 e o que faz caber
     const keywordFilter = [...(linksOn ? PALAVRAS_LINK : []), ...palavras].slice(0, MAX_PALAVRAS);
-    // Reserva tres das dez regex do Discord para as protecoes que sempre
-    // precisam estar ligadas: mensagem gigante, invisivel e asterisco.
+    // Reserva duas das dez regex: invisivel e asterisco. Mensagem gigante
+    // NAO entra aqui (Discord recusa a regex compilada).
     const regexPatterns = [...REGEX_NATIVOS, ...regex].slice(0, MAX_REGEX);
     if (keywordFilter.length || regexPatterns.length) {
       defs.push({
@@ -375,6 +376,29 @@ function guardarSnapshot(cfg, guildId, regra, snap = snapshotRegra(regra)) {
   return snap;
 }
 
+function ehSeloAntigo(nome) {
+  return SELOS_ANTIGOS.includes(String(nome || '').toLowerCase());
+}
+
+function ehSeloSpam(nome) {
+  return String(nome || '').toLowerCase() === SELO_SPAM;
+}
+
+function metadadosDe(r) {
+  return (r && r.triggerMetadata) || {};
+}
+
+// Le selo0..selo5, junta palavras/regex no cfg e devolve as regras pra apagar.
+function colherSelos(todas, cfg) {
+  const selos = todas.filter((r) => ehSeloAntigo(r.name));
+  if (!selos.length) return selos;
+  cfg.palavras = limparPalavras([...(cfg.palavras || []), ...selos.flatMap((r) => metadadosDe(r).keywordFilter || [])]);
+  const regexColhidas = selos.flatMap((r) => metadadosDe(r).regexPatterns || [])
+    .filter((s) => !/\[\\s\\S\]\{501,\}/.test(String(s)));
+  cfg.regex = limparRegex([...(cfg.regex || []), ...regexColhidas]);
+  return selos;
+}
+
 function payloadOriginal(snap) {
   if (!snap) return null;
   return {
@@ -408,12 +432,24 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
     out.erros.push('listar regras: ' + msg(e));
     return out;
   }
-  const todas = [...existentes.values()];
-  const minhas = todas.filter((r) => String(r.name || '').startsWith(PREFIXO));
+  let todas = [...existentes.values()];
+  let minhas = todas.filter((r) => String(r.name || '').startsWith(PREFIXO));
   const porGatilho = (t) => todas.filter((r) => r.triggerType === t);
-  // Regra desligada tambem ocupa uma vaga na API. Contar somente as ligadas
-  // era justamente o que fazia a criacao falhar quando as seis selo0..selo5
-  // estavam presentes.
+
+  // Colhe palavras dos selo0..selo5 ANTES de apagar, pra nao perder filtro antigo.
+  const selos = colherSelos(todas, cfg);
+  for (const r of selos) {
+    try {
+      await guild.autoModerationRules.delete(r, 'satan: selo antigo absorvido no filtro');
+      out.removidas.push(r.name);
+    } catch (e) { out.erros.push(r.name + ': ' + msg(e)); }
+  }
+  if (selos.length) {
+    todas = todas.filter((r) => !ehSeloAntigo(r.name));
+    minhas = todas.filter((r) => String(r.name || '').startsWith(PREFIXO));
+  }
+
+  // Regra desligada tambem ocupa uma vaga na API.
   let keywordCount = porGatilho(TRIGGER.Keyword).length;
 
   if (!cfg.on) {
@@ -445,82 +481,36 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
     try {
       const existente = minhas.find((r) => r.name === nome) || todas.find((r) => r.name === nome) || null;
 
-      // gatilho que o discord so deixa ter UM (spam e mencoes): se o dono ja
-      // configurou o dele na mao no painel, o bot nao cria outro (daria erro) —
-      // ele adota a regra que ja existe
+      // Spam/mencoes: so 1 por servidor. Reusa selo-preset1 (ou outra regra
+      // unica do mesmo gatilho) em vez de criar duplicata.
       if (!existente && def.unico) {
-        const manual = porGatilho(def.triggerType).find((r) => !String(r.name || '').startsWith(PREFIXO));
-        if (manual) {
-          if (!manual.enabled) {
-            await guild.autoModerationRules.edit(manual, { enabled: true, reason: 'satan: automod ligado' });
-            out.ligadas.push(manual.name + ' (regra do painel)');
-          }
-          out.adotadas.push(manual.name);
-          continue;
-        }
-      }
-
-      // Palavra: o Discord permite no maximo seis regras por servidor. Se nao
-      // houver vaga, assume uma regra manual inteira — inclusive a id dela —
-      // em vez de pedir que o dono abra espaco no painel.
-      if (!existente && !def.unico && def.triggerType === TRIGGER.Keyword && keywordCount >= 6) {
-        const manual = porGatilho(TRIGGER.Keyword).find((r) => !String(r.name || '').startsWith(PREFIXO));
-        if (manual) {
-          const nomeOriginal = manual.name;
-          const snapshot = snapshotRegra(manual);
-          const payloadFiltro = {
+        const manuais = porGatilho(def.triggerType).filter((r) => !String(r.name || '').startsWith(PREFIXO));
+        const seloSpam = def.chave === 'spam' ? manuais.find((r) => ehSeloSpam(r.name)) : null;
+        if (seloSpam) {
+          const antigo = seloSpam.name;
+          await guild.autoModerationRules.edit(seloSpam, {
             name: nome,
-            eventType: EVENTO.MessageSend,
-            triggerMetadata: def.triggerMetadata,
             actions: def.actions,
             enabled: true,
             exemptRoles: cargos,
             exemptChannels: canais,
-            reason: 'satan: assumindo vaga de regra manual',
-          };
-          try {
-            // PATCH e o caminho normal: a regra ja e KEYWORD, entao basta
-            // trocar nome, conteudo e acoes (triggerType nao e editavel).
-            await guild.autoModerationRules.edit(manual, payloadFiltro);
-          } catch (e) {
-            // Algumas respostas da API tratam essa alteracao como se fosse
-            // criacao de uma sétima regra. Libera a vaga e recria o filtro;
-            // as outras cinco regras continuam intocadas.
-            if (!/maximum|max\b|limit|limite|rate/i.test(msg(e))) throw e;
-            await guild.autoModerationRules.delete(manual, 'satan: liberando vaga para o filtro');
-            let criado = false;
-            let ultimoErro = e;
-            for (let tentativa = 0; tentativa < 3 && !criado; tentativa++) {
-              try {
-                await guild.autoModerationRules.create({ ...payloadFiltro, triggerType: TRIGGER.Keyword });
-                criado = true;
-              } catch (e2) {
-                ultimoErro = e2;
-                if (tentativa < 2) await new Promise((resolve) => setTimeout(resolve, 1000));
-              }
-            }
-            if (!criado) {
-              // Nao deixa a regra antiga perdida se o segundo passo falhar.
-              await guild.autoModerationRules.create(payloadOriginal(snapshot)).catch(() => {});
-              const falha = new Error('absorver regra: ' + msg(ultimoErro));
-              falha.automodAbsorcao = true;
-              throw falha;
-            }
-          }
-          guardarSnapshot(cfg, guild.id, manual, snapshot);
-          // Alguns mocks e algumas versoes do discord.js nao atualizam o
-          // objeto local retornado pelo fetch depois do edit.
-          manual.name = nome;
-          manual.eventType = EVENTO.MessageSend;
-          manual.triggerType = def.triggerType;
-          manual.triggerMetadata = def.triggerMetadata;
-          manual.actions = def.actions;
-          manual.enabled = true;
-          out.absorvida = nomeOriginal;
-          out.adotadas.push(nomeOriginal);
+            reason: 'satan: reusando selo-preset1',
+          });
+          seloSpam.name = nome;
+          out.adotadas.push(antigo);
+          out.criadas.push(nome + ' (reusada)');
           continue;
         }
-        out.avisos.push(`o servidor ja tem as 6 regras de palavra que o discord permite e nenhuma e do bot — "${nome}" nao coube`);
+        if (manuais.length) {
+          out.avisos.push(`ja existe regra de ${def.nome} na mao ("${manuais[0].name}") — nao crio duplicata e nao mexo nela`);
+          out.adotadas.push(manuais[0].name);
+          continue;
+        }
+      }
+
+      // Sem absorver regra manual aleatoria. So avisa se as 6 vagas estiverem cheias.
+      if (!existente && !def.unico && def.triggerType === TRIGGER.Keyword && keywordCount >= 6) {
+        out.avisos.push(`o servidor ja tem as 6 regras de palavra que o discord permite — "${nome}" nao coube (so apago selo0..selo5)`);
         continue;
       }
 
@@ -649,4 +639,9 @@ module.exports = {
   podeTimeout,
   limparPalavras,
   limparRegex,
+  SELOS_ANTIGOS,
+  SELO_SPAM,
+  REGEX_NATIVOS,
+  colherSelos,
+  definicoes,
 };

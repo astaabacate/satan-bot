@@ -575,6 +575,7 @@ client.on('messageCreate', async (m) => {
         '# AutoMod do Discord',
         'Barra a mensagem **antes** dela aparecer no canal — e vale até com o bot desligado.',
         '-# quem tem Administrador ou Gerenciar Servidor passa direto (isso é do próprio Discord)',
+        '-# mensagem gigante (>500 chars): o AutoMod nativo **não** cobre (Discord recusa a regex). o filtro antigo do bot apaga depois.',
         '',
         '**`.automod`** liga/sincroniza  •  **`.automod status`** o que tá valendo',
         '**`.automod off`** desliga as regras do bot  •  **`.automod apagar`** apaga elas de vez',
