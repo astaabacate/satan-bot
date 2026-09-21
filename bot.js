@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, PermissionFlagsBits } = require('discord.js');
 const { figCreate } = require('./fig.js');
 
 // token vem do .env ao lado — nao precisa de variavel de ambiente nem de chave na mao
@@ -253,6 +253,7 @@ client.once('ready', async () => {
   client.user.setActivity('o sofrimento dos condenados', { type: 3 });
   if (typeof varrerLinks === 'function') varrerLinks().catch(err); else err(new Error('varrerLinks ausente no ready'));
   if (typeof varrerFlood === 'function') varrerFlood().catch(err); else err(new Error('varrerFlood ausente no ready'));
+  limparAutomodNativo().catch(err);
   (async () => {
     const stN = readJsonSafe(NUKE_STATE, {});
     if (stN && stN.on === true && stN.nextAt) {
