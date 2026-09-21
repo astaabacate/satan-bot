@@ -668,6 +668,9 @@ async function varrerLinks() {
     // 1.6) asterisco (markdown quebrado tipo **teste*): apaga na hora, sem castigo
     if ((m.content || '').includes('*')) reasons.push('asterisco');
 
+    // 1.6b) titulo gigante do discord: linha com # / ## / ### + espaco
+    if (/(^|\n)#{1,3}\s/.test(m.content || '')) reasons.push('titulo');
+
     // 1.7) mensagem invisivel (so espacos/zero-width/tags unicode): apaga na hora; grande = castigo
     {
       const bruto = m.content || '';
