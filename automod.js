@@ -16,12 +16,13 @@
 // (dono tem todas as permissoes).
 const fs = require('fs');
 const path = require('path');
-const {
-  AutoModerationRuleTriggerType: TRIGGER,
-  AutoModerationActionType: ACAO,
-  AutoModerationRuleEventType: EVENTO,
-  PermissionFlagsBits,
-} = require('discord.js');
+const { PermissionFlagsBits } = require('discord.js');
+
+// Valores da API do Discord. Mantemos os payloads sem depender dos enums do
+// discord.js (e assim uma atualização da biblioteca não muda o que enviamos).
+const TRIGGER = { Keyword: 1, Spam: 3, MentionSpam: 5 };
+const ACAO = { BlockMessage: 1, SendAlertMessage: 2, Timeout: 3 };
+const EVENTO = { MessageSend: 1 };
 
 const PREFIXO = '[satan] ';
 const ARQUIVO = path.join(__dirname, 'automod_config.json');
@@ -47,7 +48,7 @@ const PADRAO = {
   links: { on: true, permitidos: [] },       // link/convite bloqueado antes de aparecer
   palavras: [],                              // palavras/frases bloqueadas (aceita * curinga)
   regex: [],                                 // ate 10 padroes (regex do rust: sem \1/retrovisor)
-  asterisco: false,                          // bloqueia qualquer * (markdown quebrado)
+  asterisco: false,                          // mantido para compatibilidade com o painel; o nativo ja bloqueia *
   timeoutSegundos: 0,                        // >0 = o proprio automod da timeout (so palavra/regex/mencao)
   castigo: { blocos: 3, janelaMin: 10 },     // 3 bloqueios em 10min -> castigo progressivo do bot
   aviso: {},                                 // texto que o autor ve quando e bloqueado
@@ -55,6 +56,7 @@ const PADRAO = {
   canaisImunes: [],                          // canais que nao tem automod
   canalAlertas: '',                          // canal onde o discord posta o que foi bloqueado
   compacto: true,                            // junta link+palavras+regex numa regra so (o discord so deixa 6)
+  absorvida: {},                             // regra manual assumida: guildId -> conteudo original
 };
 
 const AVISO_PADRAO = {
@@ -75,6 +77,14 @@ const PALAVRAS_LINK = [
   '*discordapp.com/invite*',
   '*dsc.gg/*',
 ];
+
+// O filtro nativo precisa pegar tambem o que antes era tratado somente no
+// messageCreate. Sao regex Rust validas no AutoMod do Discord; as tres ficam
+// sempre na regra compacta para que o bot nao dependa de comando ou config.
+const REGEX_GIGANTE = '(?s)^.{501,}$';
+const REGEX_INVISIVEL = String.raw`^[\s\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2800\u3164\ufeff\ufe00-\ufe0f\ufff0-\ufff8\ufffe\uffff\u{e0000}-\u{e007f}]+$`;
+const REGEX_ASTERISCO = String.raw`\*`;
+const REGEX_NATIVOS = [REGEX_GIGANTE, REGEX_INVISIVEL, REGEX_ASTERISCO];
 
 // ---------------- config ----------------
 function ehObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -232,7 +242,9 @@ function definicoes(cfg, guild) {
     // uma regra so pro filtro inteiro: o discord deixa no maximo 6 regras de
     // palavra por servidor, entao juntar tudo em 1 e o que faz caber
     const keywordFilter = [...(linksOn ? PALAVRAS_LINK : []), ...palavras].slice(0, MAX_PALAVRAS);
-    const regexPatterns = [...regex, ...(cfg.asterisco ? ['\\*'] : [])].slice(0, MAX_REGEX);
+    // Reserva tres das dez regex do Discord para as protecoes que sempre
+    // precisam estar ligadas: mensagem gigante, invisivel e asterisco.
+    const regexPatterns = [...REGEX_NATIVOS, ...regex].slice(0, MAX_REGEX);
     if (keywordFilter.length || regexPatterns.length) {
       defs.push({
         chave: 'filtro',
@@ -324,11 +336,66 @@ function igual(existente, def, extraCargos, extraCanais) {
   return true;
 }
 
+function copiar(v) {
+  try { return JSON.parse(JSON.stringify(v)); } catch { return v; }
+}
+
+function idsDe(col) {
+  if (!col) return [];
+  if (typeof col.keys === 'function') return [...col.keys()];
+  if (Array.isArray(col)) return col.map((x) => (x && x.id) || x).filter(Boolean);
+  return [];
+}
+
+// Uma regra manual que foi absorvida precisa poder voltar a ser manual. Alem
+// de ser uma protecao contra perda acidental, isso deixa claro no arquivo de
+// estado qual conteudo existia antes do bot assumir a vaga.
+function snapshotRegra(r) {
+  return {
+    id: r.id,
+    nome: r.name,
+    eventType: r.eventType,
+    triggerType: r.triggerType,
+    triggerMetadata: copiar(r.triggerMetadata || {}),
+    actions: copiar(r.actions || []),
+    enabled: r.enabled !== false,
+    exemptRoles: idsDe(r.exemptRoles),
+    exemptChannels: idsDe(r.exemptChannels),
+  };
+}
+
+function absorvidaDe(cfg, guildId) {
+  const todas = cfg && cfg.absorvida;
+  return todas && ehObj(todas) ? todas[guildId] || null : null;
+}
+
+function guardarSnapshot(cfg, guildId, regra) {
+  if (!ehObj(cfg.absorvida)) cfg.absorvida = {};
+  const snap = snapshotRegra(regra);
+  cfg.absorvida[guildId] = snap;
+  return snap;
+}
+
+function payloadOriginal(snap) {
+  if (!snap) return null;
+  return {
+    name: snap.nome,
+    eventType: snap.eventType || EVENTO.MessageSend,
+    triggerType: snap.triggerType,
+    triggerMetadata: copiar(snap.triggerMetadata || {}),
+    actions: copiar(snap.actions || []),
+    enabled: snap.enabled !== false,
+    exemptRoles: [...(snap.exemptRoles || [])],
+    exemptChannels: [...(snap.exemptChannels || [])],
+    reason: 'satan: restaurando regra manual absorvida',
+  };
+}
+
 // ---------------- sincronizacao com o discord ----------------
 // cfg.on = true  -> cria/liga/atualiza as regras
 // cfg.on = false -> desliga so as regras [satan] (nao apaga nada)
 async function sincronizar(guild, cfg = ler(), opts = {}) {
-  const out = { criadas: [], ligadas: [], ok: [], erros: [], off: [], removidas: [], adotadas: [], avisos: [] };
+  const out = { criadas: [], ligadas: [], ok: [], erros: [], off: [], removidas: [], adotadas: [], absorvida: null, avisos: [] };
   if (!guild) { out.erros.push('sem guild'); return out; }
   if (!podeGerenciar(guild)) {
     out.erros.push('o bot nao tem a permissao "Gerenciar Servidor" nesse servidor');
@@ -345,7 +412,10 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
   const todas = [...existentes.values()];
   const minhas = todas.filter((r) => String(r.name || '').startsWith(PREFIXO));
   const porGatilho = (t) => todas.filter((r) => r.triggerType === t);
-  let keywordCount = porGatilho(TRIGGER.Keyword).filter((r) => r.enabled).length;
+  // Regra desligada tambem ocupa uma vaga na API. Contar somente as ligadas
+  // era justamente o que fazia a criacao falhar quando as seis selo0..selo5
+  // estavam presentes.
+  let keywordCount = porGatilho(TRIGGER.Keyword).length;
 
   if (!cfg.on) {
     for (const r of minhas) {
@@ -391,9 +461,38 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
         }
       }
 
-      // palavra: o discord permite no maximo 6 regras desse tipo por servidor
+      // Palavra: o Discord permite no maximo seis regras por servidor. Se nao
+      // houver vaga, assume uma regra manual inteira — inclusive a id dela —
+      // em vez de pedir que o dono abra espaco no painel.
       if (!existente && !def.unico && def.triggerType === TRIGGER.Keyword && keywordCount >= 6) {
-        out.avisos.push(`o servidor ja tem as 6 regras de palavra que o discord permite e nenhuma e do bot — "${nome}" nao coube. apaga/desliga uma regra manual no painel do discord que o bot cria a dele sozinho (ou usa .automod compacto on pra ocupar so 1 vaga)`);
+        const manual = porGatilho(TRIGGER.Keyword).find((r) => !String(r.name || '').startsWith(PREFIXO));
+        if (manual) {
+          const nomeOriginal = manual.name;
+          guardarSnapshot(cfg, guild.id, manual);
+          await guild.autoModerationRules.edit(manual, {
+            name: nome,
+            eventType: EVENTO.MessageSend,
+            triggerType: def.triggerType,
+            triggerMetadata: def.triggerMetadata,
+            actions: def.actions,
+            enabled: true,
+            exemptRoles: cargos,
+            exemptChannels: canais,
+            reason: 'satan: assumindo vaga de regra manual',
+          });
+          // Alguns mocks e algumas versoes do discord.js nao atualizam o
+          // objeto local retornado pelo fetch depois do edit.
+          manual.name = nome;
+          manual.eventType = EVENTO.MessageSend;
+          manual.triggerType = def.triggerType;
+          manual.triggerMetadata = def.triggerMetadata;
+          manual.actions = def.actions;
+          manual.enabled = true;
+          out.absorvida = nomeOriginal;
+          out.adotadas.push(nomeOriginal);
+          continue;
+        }
+        out.avisos.push(`o servidor ja tem as 6 regras de palavra que o discord permite e nenhuma e do bot — "${nome}" nao coube`);
         continue;
       }
 
@@ -457,35 +556,23 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
 }
 
 // apaga de vez as regras do bot (o servidor fica sem automod nenhum, so as manuais ficam)
-async function apagar(guild) {
-  const out = { apagadas: [], erros: [] };
+async function apagar(guild, cfg = ler()) {
+  const out = { apagadas: [], restauradas: [], erros: [] };
   let existentes;
   try { existentes = await guild.autoModerationRules.fetch(); } catch (e) { out.erros.push(msg(e)); return out; }
+  const snap = absorvidaDe(cfg, guild.id);
   for (const r of existentes.values()) {
     if (!String(r.name || '').startsWith(PREFIXO)) continue; // regra feita na mao: nao encosta
     try {
-      await guild.autoModerationRules.delete(r, 'satan: automod removido');
-      out.apagadas.push(r.name);
-    } catch (e) { out.erros.push(r.name + ': ' + msg(e)); }
-  }
-  return out;
-}
-
-// desliga uma regra pelo nome — SO quando o dono pede explicitamente
-// (serve pra abrir vaga quando as 6 regras de palavra do discord estao ocupadas).
-// Nao apaga nada: da pra ligar de novo no painel do discord
-async function desligarRegra(guild, nome) {
-  const out = { ok: [], erros: [] };
-  if (!nome) { out.erros.push('nao disse o nome da regra'); return out; }
-  let existentes;
-  try { existentes = await guild.autoModerationRules.fetch(); } catch (e) { out.erros.push(msg(e)); return out; }
-  const alvo = [...existentes.values()].filter((r) => String(r.name || '').toLowerCase() === String(nome).trim().toLowerCase());
-  if (!alvo.length) { out.erros.push('nao achei nenhuma regra com esse nome (ve os nomes em .automod status)'); return out; }
-  for (const r of alvo) {
-    if (!r.enabled) { out.erros.push(`"${r.name}" ja estava desligada`); continue; }
-    try {
-      await guild.autoModerationRules.edit(r, { enabled: false, reason: 'satan: pedido do dono' });
-      out.ok.push(r.name);
+      // A regra manual que ocupava a ultima vaga nao foi criada pelo bot;
+      // devolve-a ao dono em vez de apagar conteudo que estava no servidor.
+      if (snap && r.id === snap.id && r.name === PREFIXO + 'filtro') {
+        await guild.autoModerationRules.edit(r, payloadOriginal(snap));
+        out.restauradas.push(snap.nome);
+      } else {
+        await guild.autoModerationRules.delete(r, 'satan: automod removido');
+        out.apagadas.push(r.name);
+      }
     } catch (e) { out.erros.push(r.name + ': ' + msg(e)); }
   }
   return out;
@@ -529,7 +616,6 @@ module.exports = {
   registrarStatus,
   sincronizar,
   apagar,
-  desligarRegra,
   listar,
   podeGerenciar,
   podeTimeout,
