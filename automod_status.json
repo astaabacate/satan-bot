@@ -3,35 +3,29 @@
     "1484007517091528914": {
       "on": true,
       "permiteGerenciar": true,
-      "criadas": [],
+      "criadas": [
+        "[satan] spam (reusada)",
+        "[satan] filtro"
+      ],
       "ligadas": [],
-      "removidas": [],
+      "removidas": [
+        "selo4",
+        "selo5",
+        "selo0",
+        "selo1",
+        "selo2",
+        "selo3"
+      ],
       "adotadas": [
         "selo-preset1"
       ],
       "absorvida": "selo0",
       "avisos": [],
-      "erros": [
-        "[satan] filtro: absorver regra: Invalid Form Body\ntrigger_metadata.regex_patterns.^[\\s\\S]{501,}$[AUTO_MODERATION_REGEX_COMPILED_TOO_BIG]: \"^[\\s\\S]{501,}$\" exceeded size limit"
-      ],
+      "erros": [],
       "regras": [
         {
-          "nome": "selo4",
-          "nosso": false,
-          "on": true,
-          "gatilho": "palavra",
-          "acoes": "bloqueia"
-        },
-        {
-          "nome": "selo5",
-          "nosso": false,
-          "on": true,
-          "gatilho": "palavra",
-          "acoes": "bloqueia"
-        },
-        {
-          "nome": "selo-preset1",
-          "nosso": false,
+          "nome": "[satan] spam",
+          "nosso": true,
           "on": true,
           "gatilho": "spam",
           "acoes": "bloqueia"
@@ -44,36 +38,15 @@
           "acoes": "bloqueia"
         },
         {
-          "nome": "selo0",
-          "nosso": false,
-          "on": true,
-          "gatilho": "palavra",
-          "acoes": "bloqueia"
-        },
-        {
-          "nome": "selo1",
-          "nosso": false,
-          "on": true,
-          "gatilho": "palavra",
-          "acoes": "bloqueia"
-        },
-        {
-          "nome": "selo2",
-          "nosso": false,
-          "on": true,
-          "gatilho": "palavra",
-          "acoes": "bloqueia"
-        },
-        {
-          "nome": "selo3",
-          "nosso": false,
+          "nome": "[satan] filtro",
+          "nosso": true,
           "on": true,
           "gatilho": "palavra",
           "acoes": "bloqueia"
         }
       ],
-      "atualizadoEm": "2026-09-21T00:46:03.779Z"
+      "atualizadoEm": "2026-09-21T00:50:33.551Z"
     }
   },
-  "atualizadoEm": "2026-09-21T00:46:03.779Z"
+  "atualizadoEm": "2026-09-21T00:50:33.551Z"
 }
