@@ -928,6 +928,9 @@ async function varrerLinks() {
     // 1.6) asterisco (markdown quebrado tipo **teste*): apaga na hora, sem castigo
     if ((m.content || '').includes('*')) reasons.push('asterisco');
 
+    // 1.6b) comeca com # (tenta virar texto grande/bold): apaga na hora, sem castigo
+    if (/^#/.test((m.content || '').trim())) reasons.push('header');
+
     // 1.7) mensagem invisivel (so espacos/zero-width/tags unicode): apaga na hora; grande = castigo
     {
       const bruto = m.content || '';
