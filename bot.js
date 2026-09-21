@@ -140,21 +140,6 @@ function mentionsOf(t) {
   if (!us.length && !rs.length) return `<@${OWNER_ID}>`;
   return [...us.map((id) => `<@${id}>`), ...rs.map((id) => `<@&${id}>`)].join(' ');
 }
-function bumpMsg() {
-  return {
-    flags: 1 << 15,
-    components: [
-      {
-        type: 17,
-        accent_color: 8912896,
-        components: [
-          { type: 10, content: '# ESCREVA /bump E ENVIE NESSE CANAL' },
-          { type: 10, content: 'o disboard tá liberado de novo.' },
-        ],
-      },
-    ],
-  };
-}
 function bumpAvisoMsg() {
   return {
     flags: 1 << 15,
@@ -291,7 +276,14 @@ async function automodSync(tag) {
   for (const gid of INFERNO_GUILDS) {
     const g = client.guilds.cache.get(gid);
     if (!g) continue;
+    const cfgAntes = JSON.stringify(cfg);
     const r = await automod.sincronizar(g, cfg);
+    // A absorcao registra o conteudo da regra antiga no arquivo persistente;
+    // isso precisa ser salvo mesmo sem o dono jamais mandar .automod.
+    if (JSON.stringify(cfg) !== cfgAntes) {
+      automod.salvar(cfg);
+      ghStateSyncTick();
+    }
     let regras = [];
     try {
       regras = (await automod.listar(g)).map((x) => ({ nome: x.nome, nosso: x.nosso, on: x.on, gatilho: x.gatilho, acoes: x.acoes }));
@@ -299,7 +291,8 @@ async function automodSync(tag) {
     // diario no automod_status.json (vai pro repo): da pra conferir de fora se as
     // regras existem mesmo no servidor e qual foi o ultimo erro
     const errosAntes = (automod.statusDe(gid) || {}).erros || [];
-    automod.registrarStatus(gid, { on: cfg.on, permiteGerenciar: automod.podeGerenciar(g), criadas: r.criadas, ligadas: r.ligadas, removidas: r.removidas, adotadas: r.adotadas, avisos: r.avisos, erros: r.erros, regras });
+    const absorvida = r.absorvida || (cfg.absorvida && cfg.absorvida[gid] && cfg.absorvida[gid].nome) || null;
+    automod.registrarStatus(gid, { on: cfg.on, permiteGerenciar: automod.podeGerenciar(g), criadas: r.criadas, ligadas: r.ligadas, removidas: r.removidas, adotadas: r.adotadas, absorvida, avisos: r.avisos, erros: r.erros, regras });
     const novosErros = r.erros.filter((e) => !errosAntes.includes(e));
     if (novosErros.length) avisarDono(`automod (servidor ${gid}) deu erro:\n${novosErros.join('\n')}`).catch(err);
 
@@ -595,7 +588,6 @@ client.on('messageCreate', async (m) => {
         '**`.automod regex del <n>`**  •  **`.automod regex lista`**',
         '**`.automod asterisco on|off`** bloqueia quem usa `*` quebrado',
         '**`.automod compacto on|off`** junta link+palavras+regex numa regra só (cabe em 1 vaga)',
-        '**`.automod desligar <nome>`** desliga uma regra pelo nome (abre vaga quando as 6 do Discord tão cheias)',
         '**`.automod timeout 600`** o próprio automod dá timeout (0 = só bloqueia)',
         '**`.automod castigo 3 10`** 3 bloqueios em 10min = castigo progressivo do bot',
         '**`.automod alertas #canal`** o Discord posta lá o que bloqueou (ou `off`)',
@@ -612,9 +604,9 @@ client.on('messageCreate', async (m) => {
           return void await sincronizar('automod **desligado** (as regras ficam desativadas, nada é apagado).');
         }
         if (sub === 'apagar' || sub === 'limpar-tudo') {
-          const r = await automod.apagar(m.guild);
+          const r = await automod.apagar(m.guild, cfg);
           log('AUTOMOD_APAGAR', { guild: m.guild.id, r });
-          return void await dizer([`apaguei ${r.apagadas.length} regra(s): ${r.apagadas.join(', ') || '-'}`, r.erros.length ? 'erros: ' + r.erros.join(' | ') : ''].filter(Boolean).join('\n'));
+          return void await dizer([`apaguei ${r.apagadas.length} regra(s): ${r.apagadas.join(', ') || '-'}`, r.restauradas && r.restauradas.length ? `restaurei a regra manual: ${r.restauradas.join(', ')}` : '', r.erros.length ? 'erros: ' + r.erros.join(' | ') : ''].filter(Boolean).join('\n'));
         }
         if (sub === 'status') {
           const regras = await automod.listar(m.guild);
@@ -698,23 +690,6 @@ client.on('messageCreate', async (m) => {
           if (!low) return void await dizer(`asterisco está **${cfg.asterisco ? 'bloqueado' : 'liberado'}** (o bot já apaga mensagem com \`*\` na mão).`);
           cfg.asterisco = low === 'on' || low === 'ligar';
           return void await sincronizar(`asterisco: **${cfg.asterisco ? 'bloqueado' : 'liberado'}**.`);
-        }
-        // .automod desligar <nome> — abre vaga: as 6 regras de palavra do discord
-        // sao o limite, entao desligar uma manual libera espaco pro filtro do bot
-        if (sub === 'desligar' || sub === 'desativar' || sub === 'liberar') {
-          const nome = arg.trim();
-          if (!nome) return void await dizer('qual regra? ve os nomes em `.automod status` e manda `.automod desligar <nome>`.');
-          const rd = await automod.desligarRegra(m.guild, nome);
-          if (rd.ok.length) {
-            const r2 = await automod.sincronizar(m.guild, cfg, { forcar: true }).catch((e) => { err(e); return null; });
-            return void await dizer([
-              `desliguei: ${rd.ok.join(', ')} (da pra ligar de novo no painel do discord)`,
-              r2 && r2.criadas.length ? 'e ja criei: ' + r2.criadas.join(', ') : '',
-              r2 && r2.avisos.length ? 'avisos: ' + r2.avisos.join(' | ') : '',
-              r2 && r2.erros.length ? 'erros: ' + r2.erros.join(' | ') : '',
-            ].filter(Boolean).join('\n'));
-          }
-          return void await dizer('nao deu: ' + rd.erros.join(' | '));
         }
         if (sub === 'compacto') {
           if (!low) return void await dizer(`modo compacto está **${cfg.compacto !== false ? 'ligado' : 'desligado'}** (ligado = link+palavras+regex+asterisco numa regra só, ocupa 1 vaga em vez de 4).`);
