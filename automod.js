@@ -488,12 +488,21 @@ async function sincronizar(guild, cfg = ler(), opts = {}) {
             // as outras cinco regras continuam intocadas.
             if (!/maximum|max\b|limit|limite|rate/i.test(msg(e))) throw e;
             await guild.autoModerationRules.delete(manual, 'satan: liberando vaga para o filtro');
-            try {
-              await guild.autoModerationRules.create({ ...payloadFiltro, triggerType: TRIGGER.Keyword });
-            } catch (e2) {
+            let criado = false;
+            let ultimoErro = e;
+            for (let tentativa = 0; tentativa < 3 && !criado; tentativa++) {
+              try {
+                await guild.autoModerationRules.create({ ...payloadFiltro, triggerType: TRIGGER.Keyword });
+                criado = true;
+              } catch (e2) {
+                ultimoErro = e2;
+                if (tentativa < 2) await new Promise((resolve) => setTimeout(resolve, 1000));
+              }
+            }
+            if (!criado) {
               // Nao deixa a regra antiga perdida se o segundo passo falhar.
               await guild.autoModerationRules.create(payloadOriginal(snapshot)).catch(() => {});
-              throw e2;
+              throw ultimoErro;
             }
           }
           guardarSnapshot(cfg, guild.id, manual, snapshot);
