@@ -128,7 +128,7 @@ async function apagarRelacionadas(m, recentes, motivo) {
 
 // assinatura da mensagem: vale pra TUDO (texto, emoji, figurinha, imagem, gif, embed)
 function msgSig(m) {
-  const txt = (m.content || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const txt = sigTextoVisual(m.content || '');
   const em = m.content ? (m.content.match(/<(a?):\w+:(\d+)>/g) || []).join(',') : '';
   const st = m.stickers && m.stickers.size ? [...m.stickers.values()].map((s) => s.id || s.name).join(',') : '';
   const at = m.attachments.size ? [...m.attachments.values()].map((a) => a.width || a.height ? `img:${a.width}x${a.height}` : `f:${a.name}`).join(',') : '';
@@ -326,6 +326,8 @@ async function whEdit(ch, messageId, payload) {
 
 const logWhCache = new Map();
 const logMsgCache = new Map(); // logId -> { content, authorId, guildId, channelId }
+const logQueue = [];
+let logSending = false;
 let logSeq = 0;
 function lerLogsState() { return readJsonSafe(LOGS_STATE, { on: false, channelId: '', webhookId: '' }); }
 function salvarLogsState(st) { fs.writeFileSync(LOGS_STATE, JSON.stringify(st, null, 2)); ghStateSyncTick(); }
@@ -368,24 +370,59 @@ function corta(s, n) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 function limparCodigo(s) { return String(s || '').replace(/```/g, 'ʼʼʼ'); }
+function esperar(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+function enfileirarLog(payload) {
+  logQueue.push(payload);
+  drenarLogs().catch(err);
+}
+async function drenarLogs() {
+  if (logSending) return;
+  logSending = true;
+  try {
+    while (logQueue.length) {
+      const payload = logQueue.shift();
+      const wh = await getLogsWebhook().catch(() => null);
+      if (!wh) { logQueue.length = 0; break; }
+      await wh.send(payload).catch((e) => log('LOG_SEND_FAIL', { err: e && e.message }));
+      await esperar(250);
+    }
+  } finally { logSending = false; }
+}
+function cardLogSimples(titulo, linhas, cor = 8912896) {
+  const txt = [titulo ? `### ${titulo}` : '', ...linhas].filter(Boolean).join('\n');
+  return {
+    username: 'Satan Logs',
+    allowedMentions: { parse: [] },
+    flags: 1 << 15,
+    components: [{ type: 17, accent_color: cor, components: [{ type: 10, content: corta(txt, 3900) }] }],
+  };
+}
+function nomeUser(u) { return (u && (u.tag || u.username || u.id)) || 'desconhecido'; }
+function avatarUser(u) { return u && u.displayAvatarURL ? u.displayAvatarURL({ size: 128 }) : null; }
+function fmtCanal(id) { return id ? `<#${id}>` : '`-`'; }
+function fmtUser(id) { return id ? `<@${id}>` : '`-`'; }
+function conteudoMsg(m) {
+  if (!m) return '*sem texto*';
+  const partes = [];
+  const content = m.content || '';
+  partes.push(content ? limparCodigo(content) : '*sem texto*');
+  if (m.attachments && m.attachments.size) partes.push('\n**Anexos:**\n' + [...m.attachments.values()].map((a) => a.url || a.name).slice(0, 10).join('\n'));
+  if (m.stickers && m.stickers.size) partes.push('\n**Stickers:** ' + [...m.stickers.values()].map((x) => x.name || x.id).join(', '));
+  if (m.embeds && m.embeds.length) partes.push(`\n**Embeds:** ${m.embeds.length}`);
+  return corta(partes.join('\n'), 3600);
+}
+function logEvento(titulo, linhas, cor) { enfileirarLog(cardLogSimples(titulo, linhas, cor)); }
 async function enviarLogMensagem(m) {
   const st = lerLogsState();
   if (!st.on || !m.guild || m.webhookId === st.webhookId) return;
-  const wh = await getLogsWebhook(st);
-  if (!wh) return;
   const logId = String(++logSeq);
   const avatar = m.author.displayAvatarURL ? m.author.displayAvatarURL({ size: 128 }) : null;
   const conteudo = m.content || '';
   logMsgCache.set(logId, { content: conteudo, authorId: m.author.id, guildId: m.guild.id, channelId: m.channelId, msgId: m.id });
   if (logMsgCache.size > 500) logMsgCache.delete(logMsgCache.keys().next().value);
-  const anexos = [...m.attachments.values()].map((a) => a.url).slice(0, 10);
-  const partes = [];
-  partes.push(conteudo ? limparCodigo(conteudo) : '*sem texto*');
-  if (anexos.length) partes.push('\n**Anexos:**\n' + anexos.join('\n'));
-  if (m.stickers && m.stickers.size) partes.push('\n**Stickers:** ' + [...m.stickers.values()].map((x) => x.name || x.id).join(', '));
-  const desc = corta(partes.join('\n'), 3600);
+  const desc = conteudoMsg(m);
   const tag = m.author.tag || m.author.username || m.author.id;
-  await wh.send({
+  enfileirarLog({
     username: corta(tag, 80),
     avatarURL: avatar || undefined,
     allowedMentions: { parse: [] },
@@ -415,12 +452,12 @@ async function enviarLogMensagem(m) {
         ]},
       ],
     }],
-  }).catch((e) => log('LOG_SEND_FAIL', { err: e && e.message }));
+  });
 }
 async function enviarLogSistema(texto) {
-  const wh = await getLogsWebhook().catch(() => null);
-  if (!wh) return;
-  await wh.send({
+  const st = lerLogsState();
+  if (!st.on) return;
+  enfileirarLog({
     username: 'Satan Logs',
     allowedMentions: { parse: [] },
     flags: 1 << 15,
@@ -431,19 +468,23 @@ async function enviarLogSistema(texto) {
         { type: 10, content: String(texto).slice(0, 3900) },
       ],
     }],
-  }).catch(() => {});
+  });
 }
+
 
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildMembers,
   ],
-  partials: [Partials.Channel, Partials.Message],
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
 });
 
 client.once('ready', async () => {
@@ -482,6 +523,12 @@ client.on('guildCreate', async (g) => {
 // membro novo no inferno -> manda as boas-vindas na DM
 client.on('guildMemberAdd', async (member) => {
   if (!INFERNO_GUILDS.has(member.guild.id)) return;
+  if (!member.user.bot) logEvento('🟢 membro entrou', [
+    `**Conta:** <@${member.id}>`,
+    `**Nome:** ${member.user.tag}`,
+    `**ID:** ${member.id}`,
+    `**Criada:** <t:${Math.floor(member.user.createdTimestamp / 1000)}:F>`,
+  ], 0x2ecc71);
   if (blacklistTem(member.id)) {
     try {
       await member.ban({ reason: 'blacklist: entrou novamente' });
@@ -497,6 +544,134 @@ client.on('guildMemberAdd', async (member) => {
     log('WELCOME_FAIL', { user: member.id, err: e && e.message });
   }
 });
+
+client.on('guildMemberRemove', async (member) => {
+  try {
+    if (!member.guild || !INFERNO_GUILDS.has(member.guild.id) || (member.user && member.user.bot)) return;
+    logEvento('🔴 membro saiu', [
+      `**Conta:** ${fmtUser(member.id)}`,
+      `**Nome:** ${nomeUser(member.user)}`,
+      `**ID:** ${member.id}`,
+    ], 0xe74c3c);
+  } catch (e) { err(e); }
+});
+
+client.on('guildMemberUpdate', async (oldM, newM) => {
+  try {
+    if (!newM.guild || !INFERNO_GUILDS.has(newM.guild.id) || (newM.user && newM.user.bot)) return;
+    const linhas = [`**Conta:** ${fmtUser(newM.id)}`, `**ID:** ${newM.id}`];
+    if ((oldM.nickname || '') !== (newM.nickname || '')) linhas.push(`**Nick:** \`${oldM.nickname || '-'}\` → \`${newM.nickname || '-'}\``);
+    const oldRoles = oldM.roles && oldM.roles.cache ? new Set(oldM.roles.cache.keys()) : new Set();
+    const newRoles = newM.roles && newM.roles.cache ? new Set(newM.roles.cache.keys()) : new Set();
+    const add = [...newRoles].filter((id) => !oldRoles.has(id) && id !== newM.guild.id);
+    const rem = [...oldRoles].filter((id) => !newRoles.has(id) && id !== newM.guild.id);
+    if (add.length) linhas.push(`**Cargos +:** ${add.map((id) => `<@&${id}>`).join(' ')}`);
+    if (rem.length) linhas.push(`**Cargos -:** ${rem.map((id) => `<@&${id}>`).join(' ')}`);
+    const oldTo = oldM.communicationDisabledUntilTimestamp || 0;
+    const newTo = newM.communicationDisabledUntilTimestamp || 0;
+    if (oldTo !== newTo) linhas.push(newTo ? `**Timeout:** até <t:${Math.floor(newTo / 1000)}:F>` : '**Timeout:** removido');
+    if (linhas.length > 2) logEvento('📝 membro atualizado', linhas, 0xf1c40f);
+  } catch (e) { err(e); }
+});
+
+client.on('guildBanAdd', async (ban) => {
+  try {
+    if (!ban.guild || !INFERNO_GUILDS.has(ban.guild.id) || (ban.user && ban.user.bot)) return;
+    logEvento('🚫 membro banido', [`**Conta:** ${fmtUser(ban.user.id)}`, `**Nome:** ${nomeUser(ban.user)}`, `**ID:** ${ban.user.id}`], 0xe74c3c);
+  } catch (e) { err(e); }
+});
+
+client.on('guildBanRemove', async (ban) => {
+  try {
+    if (!ban.guild || !INFERNO_GUILDS.has(ban.guild.id) || (ban.user && ban.user.bot)) return;
+    logEvento('✅ membro desbanido', [`**Conta:** ${fmtUser(ban.user.id)}`, `**Nome:** ${nomeUser(ban.user)}`, `**ID:** ${ban.user.id}`], 0x2ecc71);
+  } catch (e) { err(e); }
+});
+
+client.on('voiceStateUpdate', async (oldS, newS) => {
+  try {
+    const guild = newS.guild || oldS.guild;
+    const member = newS.member || oldS.member;
+    if (!guild || !member || !INFERNO_GUILDS.has(guild.id) || (member.user && member.user.bot)) return;
+    const linhas = [`**Conta:** ${fmtUser(member.id)}`, `**ID:** ${member.id}`];
+    if (!oldS.channelId && newS.channelId) linhas.push(`**Entrou na call:** ${fmtCanal(newS.channelId)}`);
+    else if (oldS.channelId && !newS.channelId) linhas.push(`**Saiu da call:** ${fmtCanal(oldS.channelId)}`);
+    else if (oldS.channelId !== newS.channelId) linhas.push(`**Mudou de call:** ${fmtCanal(oldS.channelId)} → ${fmtCanal(newS.channelId)}`);
+    if (oldS.selfMute !== newS.selfMute) linhas.push(`**Mic:** ${newS.selfMute ? 'mutado' : 'desmutado'}`);
+    if (oldS.selfDeaf !== newS.selfDeaf) linhas.push(`**Áudio:** ${newS.selfDeaf ? 'surdo' : 'ouvindo'}`);
+    if (oldS.streaming !== newS.streaming) linhas.push(`**Stream:** ${newS.streaming ? 'iniciou' : 'parou'}`);
+    if (oldS.selfVideo !== newS.selfVideo) linhas.push(`**Câmera:** ${newS.selfVideo ? 'ligou' : 'desligou'}`);
+    if (linhas.length > 2) logEvento('🔊 call', linhas, 0x3498db);
+  } catch (e) { err(e); }
+});
+
+client.on('messageUpdate', async (oldM, newM) => {
+  try {
+    if (!newM.guild || !INFERNO_GUILDS.has(newM.guild.id)) return;
+    if (newM.webhookId && lerLogsState().webhookId === newM.webhookId) return;
+    if (newM.author && newM.author.bot && !newM.webhookId) return;
+    const oldTxt = oldM && oldM.content ? oldM.content : '';
+    const newTxt = newM && newM.content ? newM.content : '';
+    if (oldTxt === newTxt) return;
+    logEvento('✏️ mensagem editada', [
+      `**Conta:** ${fmtUser(newM.author && newM.author.id)}`,
+      `**Canal:** ${fmtCanal(newM.channelId)}`,
+      `**Mensagem:** \`${newM.id}\``,
+      `**Antes:**
+${corta(limparCodigo(oldTxt || '*sem cache*'), 1200)}`,
+      `**Depois:**
+${corta(limparCodigo(newTxt || '*sem texto*'), 1200)}`,
+    ], 0xf1c40f);
+  } catch (e) { err(e); }
+});
+
+client.on('messageDelete', async (m) => {
+  try {
+    if (!m.guild || !INFERNO_GUILDS.has(m.guild.id)) return;
+    if (m.webhookId && lerLogsState().webhookId === m.webhookId) return;
+    if (m.author && m.author.bot && !m.webhookId) return;
+    logEvento('🗑️ mensagem apagada', [
+      `**Conta:** ${fmtUser(m.author && m.author.id)}`,
+      `**Canal:** ${fmtCanal(m.channelId)}`,
+      `**Mensagem:** \`${m.id}\``,
+      `**Conteúdo:**
+${conteudoMsg(m)}`,
+    ], 0x95a5a6);
+  } catch (e) { err(e); }
+});
+
+client.on('messageDeleteBulk', async (msgs, channel) => {
+  try {
+    const guild = channel && channel.guild;
+    if (!guild || !INFERNO_GUILDS.has(guild.id)) return;
+    logEvento('🧹 mensagens apagadas em massa', [`**Canal:** ${fmtCanal(channel.id)}`, `**Quantidade:** ${msgs.size}`], 0x95a5a6);
+  } catch (e) { err(e); }
+});
+
+client.on('messageReactionAdd', async (reaction, user) => {
+  try {
+    if (reaction.partial) reaction = await reaction.fetch().catch(() => reaction);
+    if (!reaction.message || !reaction.message.guild || !INFERNO_GUILDS.has(reaction.message.guild.id) || user.bot) return;
+    logEvento('➕ reação adicionada', [`**Conta:** ${fmtUser(user.id)}`, `**Canal:** ${fmtCanal(reaction.message.channelId)}`, `**Mensagem:** \`${reaction.message.id}\``, `**Emoji:** ${reaction.emoji}`], 0x3498db);
+  } catch (e) { err(e); }
+});
+
+client.on('messageReactionRemove', async (reaction, user) => {
+  try {
+    if (reaction.partial) reaction = await reaction.fetch().catch(() => reaction);
+    if (!reaction.message || !reaction.message.guild || !INFERNO_GUILDS.has(reaction.message.guild.id) || user.bot) return;
+    logEvento('➖ reação removida', [`**Conta:** ${fmtUser(user.id)}`, `**Canal:** ${fmtCanal(reaction.message.channelId)}`, `**Mensagem:** \`${reaction.message.id}\``, `**Emoji:** ${reaction.emoji}`], 0x3498db);
+  } catch (e) { err(e); }
+});
+
+client.on('typingStart', async (t) => {
+  try {
+    if (!t.guild || !INFERNO_GUILDS.has(t.guild.id) || !t.user || t.user.bot) return;
+    // log de digitando e muito barulhento; fica so no console pra nao poluir o webhook
+    log('TYPING', { user: t.user.id, channel: t.channel && t.channel.id });
+  } catch (e) { err(e); }
+});
+
 
 // ---------- estado persistente no repo GitHub (sobrevive a religadas/updates) ----------
 const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'logs_state.json', 'blacklist_state.json'];
