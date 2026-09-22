@@ -37,7 +37,32 @@ const repStreak = new Map(); // userId -> { sig, count }
 const emoStreak = new Map();
 const shortBuf = new Map(); // userId -> msgs curtas (spam W/Ww) // userId -> qtd seguida de msgs so de emoji
 const linkBuf = new Map();   // userId -> [timestamps de links]
-const RE_LINK = /(https?:\/\/|discord\.gg\/|discord\.com\/invite|discordapp\.com\/)/i;
+const crossSigBuf = new Map(); // guildId:assinatura -> [{ts,userId}] (raid com varias contas mandando igual)
+const raidBuf = new Map();     // guildId/channelId -> [{ts,userId}] de mensagens suspeitas
+const raidUntil = new Map();   // guildId/channelId -> timestamp de modo raid
+const RAID_WINDOW_MS = 10 * 1000;
+const RAID_LOCK_MS = 2 * 60 * 1000;
+const RAID_MIN_MSGS = 5;
+const RAID_MIN_USERS = 3;
+// Link/convite robusto: pega http(s), www, dominios comuns e convites de Discord
+// mesmo com espacos/zero-width/fullwidth no meio (ex: discord . gg /abc).
+const LINK_TLDS = '(?:com\.br|com|net|org|gg|io|me|xyz|club|shop|site|online|top|link|app|dev|br|co|cc|ly|to|tv|info|biz|live|space|fun|lol|rip|ink|quest|icu|click|cloud|store|pro|vip|pw|ru|su|cn)';
+const RE_LINK = new RegExp('(?:https?:\\/\\/|www\\.|\\b[a-z0-9][a-z0-9-]{1,63}\\.' + LINK_TLDS + '(?:\\b|\\/))', 'i');
+const RE_INVITE = /\b(?:discord(?:app)?\.com\/invite|discord\.gg|discord\.me|discord\.io|discord\.li|dsc\.gg|invite\.gg|disboard\.org\/server|discordservers\.com\/server)\b/i;
+const RE_SEPARADORES_LINK = /\s*([.\/])\s*/g;
+function normLinkText(t) {
+  return String(t || '')
+    .normalize('NFKC')
+    .replace(RE_INV, '')
+    .replace(/[。｡]/g, '.')
+    .replace(/[⁄∕／\\]/g, '/')
+    .replace(RE_SEPARADORES_LINK, '$1')
+    .toLowerCase();
+}
+function temLink(t) {
+  const n = normLinkText(t);
+  return RE_LINK.test(n) || RE_INVITE.test(n);
+}
 
 // assinatura da mensagem: vale pra TUDO (texto, emoji, figurinha, imagem, gif, embed)
 function msgSig(m) {
@@ -431,7 +456,9 @@ client.on('messageCreate', async (m) => {
     }
     return;
   }
-  if (m.author.bot) return;
+  // Bots reais continuam ignorados, mas webhook precisa passar pelo filtro:
+  // raid costuma usar webhook e, no Discord, webhook aparece como author.bot.
+  if (m.author.bot && !m.webhookId) return;
   const rec = {
     ts: new Date().toISOString(),
     id: m.id,
@@ -867,7 +894,7 @@ async function varrerFlood() {
     for (const ch of [...g.channels.cache.values()]) {
       if (!ch.isTextBased()) continue;
       try {
-        const msgs = (await ch.messages.fetch({ limit: 100 })).filter((x) => !x.author.bot && x.author.id !== OWNER_ID && x.deletable);
+        const msgs = (await ch.messages.fetch({ limit: 100 })).filter((x) => (!x.author.bot || x.webhookId) && x.author.id !== OWNER_ID && x.deletable);
         const por = {};
         for (const x of [...msgs.values()]) (por[x.author.id] = por[x.author.id] || []).push(x);
         const alvos = new Set();
@@ -899,7 +926,7 @@ async function varrerLinks() {
       if (!ch.isTextBased()) continue;
       try {
         const msgs = await ch.messages.fetch({ limit: 100 });
-        const alvos = msgs.filter((x) => !x.author.bot && x.author.id !== OWNER_ID && RE_LINK.test(x.content || '') && x.deletable);
+        const alvos = msgs.filter((x) => (!x.author.bot || x.webhookId) && x.author.id !== OWNER_ID && temLink(x.content || '') && x.deletable);
         if (!alvos.size) continue;
         await ch.bulkDelete(alvos, true).catch(async () => {
           for (const x of [...alvos.values()]) await x.delete().catch(() => {});
@@ -923,7 +950,7 @@ async function varrerLinks() {
     if (m.content.length > cfg.chars) reasons.push(`chars>${cfg.chars}`);
 
     // 1.5) qualquer link / convite de server morre na hora
-    if (RE_LINK.test(m.content)) reasons.push('link');
+    if (temLink(m.content)) reasons.push('link');
 
     // 1.6) asterisco (markdown quebrado tipo **teste*): apaga na hora, sem castigo
     if ((m.content || '').includes('*')) reasons.push('asterisco');
@@ -937,6 +964,41 @@ async function varrerLinks() {
       const visivel = bruto.replace(RE_INV, '');
       if (bruto.length > 0 && visivel.length === 0) {
         reasons.push('invisivel');
+      }
+    }
+
+    // 1.8) raid distribuido: varias contas/webhook mandando o mesmo texto
+    // ou muitas mensagens suspeitas em poucos segundos. Isso cobre o caso que
+    // passa por baixo dos limites por-usuario (cada conta manda so 1 mensagem).
+    {
+      const suspeitaBase = reasons.some((r) => /^(link|header|invisivel|asterisco|chars>)/.test(r));
+      const sig = msgSig(m);
+      if ((suspeitaBase || sig.length >= 80) && sig !== 'vazia') {
+        const k = `${m.guild.id}:${sig.slice(0, 220)}`;
+        const arr = (crossSigBuf.get(k) || []).filter((e) => now - e.ts < 60 * 1000);
+        arr.push({ ts: now, userId: m.author.id });
+        crossSigBuf.set(k, arr);
+        const usuarios = new Set(arr.map((e) => e.userId));
+        if (arr.length >= 3 && (usuarios.size >= 3 || m.webhookId)) reasons.push('raid-repetida');
+      }
+
+      if (suspeitaBase) {
+        for (const k of [m.guild.id, `${m.guild.id}:${m.channelId}`]) {
+          const arr = (raidBuf.get(k) || []).filter((e) => now - e.ts < RAID_WINDOW_MS);
+          arr.push({ ts: now, userId: m.author.id });
+          raidBuf.set(k, arr);
+          const usuarios = new Set(arr.map((e) => e.userId));
+          if (arr.length >= RAID_MIN_MSGS && (usuarios.size >= RAID_MIN_USERS || m.webhookId)) {
+            raidUntil.set(k, now + RAID_LOCK_MS);
+            reasons.push('raid-detectada');
+            log('RAID_MODE', { alvo: k, msgs: arr.length, usuarios: usuarios.size, ate: now + RAID_LOCK_MS });
+          }
+        }
+      }
+
+      if ((now < (raidUntil.get(m.guild.id) || 0) || now < (raidUntil.get(`${m.guild.id}:${m.channelId}`) || 0)) &&
+          (suspeitaBase || m.content.length > 120 || m.attachments.size || m.embeds.length || m.stickers.size)) {
+        reasons.push('raid-mode');
       }
     }
 
@@ -1016,7 +1078,7 @@ async function varrerLinks() {
     }
 
     // 6) chuva de link: 10+ links em 10 minutos -> castigo progressivo
-    if (RE_LINK.test(m.content || '')) {
+    if (temLink(m.content || '')) {
       const arr = (linkBuf.get(m.author.id) || []).filter((t) => now - t < 10 * 60 * 1000);
       arr.push(now);
       linkBuf.set(m.author.id, arr);
