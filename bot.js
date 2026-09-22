@@ -17,7 +17,6 @@ const OWNER_ID = '1521612392105250836';          // só o dono usa comandos
 const GUILD_OFICIAL = '1484007517091528914';       // nuke/paineis sempre aqui, nunca no server de teste
 // servers onde o bot fica / boas-vindas ativas (teste + oficial)
 const INFERNO_GUILDS = new Set(['1525806672839442633', '1484007517091528914']);
-const INBOX = path.join(ROOT, 'inbox.jsonl');
 const ERRORS = path.join(ROOT, 'errors.log');
 
 // anti-flood (ajustavel via antispam_config.json)
@@ -30,6 +29,8 @@ const penaltyUntil = new Map();
 
 // castigo (timeout) progressivo: repetiu 10+ vezes -> 1h, e +1h a cada reincidencia
 const MUTE_STATE = path.join(ROOT, 'mute_state.json');
+const LOGS_STATE = path.join(ROOT, 'logs_state.json');
+const BLACKLIST_STATE = path.join(ROOT, 'blacklist_state.json');
 const MUTE_BASE_MS = 60 * 60 * 1000;
 const REP_MUTE_QTD = 10;
 const repStreak = new Map(); // userId -> { sig, count }
@@ -201,6 +202,8 @@ function menuMsg() {
               '**`.cl [qtd]`**',
               '',
               '**`.bump`**',
+              '',
+              '**`.logs on / off`**',
             ].join('\n'),
           },
           { type: 14, spacing: 2, divider: true },
@@ -284,9 +287,6 @@ const log = (tag, obj) => {
   console.log(line);
 };
 
-function append(file, obj) {
-  fs.appendFileSync(file, JSON.stringify(obj) + '\n');
-}
 
 function err(e) {
   const s = `${new Date().toISOString()} ${e && e.stack ? e.stack : e}\n`;
@@ -322,6 +322,96 @@ async function whSend(ch, payload) {
 async function whEdit(ch, messageId, payload) {
   const wh = await getWebhook(ch);
   return wh.editMessage(messageId, payload);
+}
+
+const logWhCache = new Map();
+const logMsgCache = new Map(); // logId -> { content, authorId, guildId, channelId }
+let logSeq = 0;
+function lerLogsState() { return readJsonSafe(LOGS_STATE, { on: false, channelId: '', webhookId: '' }); }
+function salvarLogsState(st) { fs.writeFileSync(LOGS_STATE, JSON.stringify(st, null, 2)); ghStateSyncTick(); }
+function lerBlacklist() { return readJsonSafe(BLACKLIST_STATE, { users: {} }); }
+function salvarBlacklist(st) { fs.writeFileSync(BLACKLIST_STATE, JSON.stringify(st, null, 2)); ghStateSyncTick(); }
+function blacklistTem(userId) { const st = lerBlacklist(); return !!(st.users && st.users[userId]); }
+function blacklistAdd(userId, dados = {}) {
+  const st = lerBlacklist();
+  st.users = st.users || {};
+  st.users[userId] = { userId, ...st.users[userId], ...dados, atualizadoEm: new Date().toISOString() };
+  salvarBlacklist(st);
+  return st.users[userId];
+}
+function blacklistDel(userId) {
+  const st = lerBlacklist();
+  st.users = st.users || {};
+  const tinha = !!st.users[userId];
+  delete st.users[userId];
+  salvarBlacklist(st);
+  return tinha;
+}
+async function getLogsWebhook(st = lerLogsState()) {
+  if (!st.on || !st.channelId) return null;
+  if (st.webhookId && logWhCache.has(st.webhookId)) return logWhCache.get(st.webhookId);
+  const ch = await client.channels.fetch(st.channelId).catch(() => null);
+  if (!ch || !ch.isTextBased()) return null;
+  const hooks = await ch.fetchWebhooks().catch(() => null);
+  let wh = hooks ? (st.webhookId && hooks.get(st.webhookId)) || hooks.find((h) => h.name === 'Satan Logs') : null;
+  if (!wh) {
+    if (!AVATAR_B64) await carregarAvatarWebhook().catch(() => {});
+    wh = await ch.createWebhook({ name: 'Satan Logs', ...(AVATAR_B64 ? { avatar: AVATAR_B64 } : {}) });
+    st.webhookId = wh.id;
+    salvarLogsState(st);
+  }
+  logWhCache.set(wh.id, wh);
+  return wh;
+}
+function corta(s, n) {
+  s = String(s || '');
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+function limparCodigo(s) { return String(s || '').replace(/```/g, 'ʼʼʼ'); }
+async function enviarLogMensagem(m) {
+  const st = lerLogsState();
+  if (!st.on || !m.guild || m.webhookId === st.webhookId) return;
+  const wh = await getLogsWebhook(st);
+  if (!wh) return;
+  const logId = String(++logSeq);
+  const avatar = m.author.displayAvatarURL ? m.author.displayAvatarURL({ size: 128 }) : null;
+  const conteudo = m.content || '';
+  logMsgCache.set(logId, { content: conteudo, authorId: m.author.id, guildId: m.guild.id, channelId: m.channelId, msgId: m.id });
+  if (logMsgCache.size > 500) logMsgCache.delete(logMsgCache.keys().next().value);
+  const anexos = [...m.attachments.values()].map((a) => a.url).slice(0, 10);
+  const partes = [];
+  partes.push(conteudo ? limparCodigo(conteudo) : '*sem texto*');
+  if (anexos.length) partes.push('\n**Anexos:**\n' + anexos.join('\n'));
+  if (m.stickers && m.stickers.size) partes.push('\n**Stickers:** ' + [...m.stickers.values()].map((x) => x.name || x.id).join(', '));
+  const desc = corta(partes.join('\n'), 3900);
+  const tag = m.author.tag || m.author.username || m.author.id;
+  await wh.send({
+    username: corta(tag, 80),
+    avatarURL: avatar || undefined,
+    allowedMentions: { parse: [] },
+    embeds: [{
+      color: 8912896,
+      author: { name: `${tag} (${m.author.id})`, ...(avatar ? { icon_url: avatar } : {}) },
+      description: desc,
+      fields: [
+        { name: 'Canal', value: `<#${m.channelId}>`, inline: true },
+        { name: 'Mensagem', value: `\`${m.id}\``, inline: true },
+        { name: 'Conta', value: `<@${m.author.id}>`, inline: true },
+      ],
+      timestamp: new Date().toISOString(),
+    }],
+    components: [{ type: 1, components: [
+      { type: 2, style: 4, label: 'Banir', custom_id: `log_ban:${m.author.id}` },
+      { type: 2, style: 4, label: 'Blacklist', custom_id: `log_bl:${m.author.id}` },
+      { type: 2, style: 2, label: 'Tirar BL', custom_id: `log_unbl:${m.author.id}` },
+      { type: 2, style: 1, label: 'Copiar msg', custom_id: `log_copy:${logId}` },
+    ]}],
+  }).catch((e) => log('LOG_SEND_FAIL', { err: e && e.message }));
+}
+async function enviarLogSistema(texto) {
+  const wh = await getLogsWebhook().catch(() => null);
+  if (!wh) return;
+  await wh.send({ username: 'Satan Logs', allowedMentions: { parse: [] }, embeds: [{ color: 0xff4444, description: String(texto).slice(0, 3900), timestamp: new Date().toISOString() }] }).catch(() => {});
 }
 
 const client = new Client({
@@ -371,6 +461,14 @@ client.on('guildCreate', async (g) => {
 // membro novo no inferno -> manda as boas-vindas na DM
 client.on('guildMemberAdd', async (member) => {
   if (!INFERNO_GUILDS.has(member.guild.id)) return;
+  if (blacklistTem(member.id)) {
+    try {
+      await member.ban({ reason: 'blacklist: entrou novamente' });
+      log('BLACKLIST_AUTO_BAN', { user: member.id, tag: member.user.tag, guild: member.guild.id });
+      enviarLogSistema(`🚫 <@${member.id}> (${member.user.tag}) entrou e foi banido automaticamente pela blacklist.`).catch(() => {});
+    } catch (e) { err(e); }
+    return;
+  }
   try {
     await member.send(WELCOME_MSG);
     log('WELCOME', { user: member.id, tag: member.user.tag });
@@ -380,7 +478,7 @@ client.on('guildMemberAdd', async (member) => {
 });
 
 // ---------- estado persistente no repo GitHub (sobrevive a religadas/updates) ----------
-const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json'];
+const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'logs_state.json', 'blacklist_state.json'];
 async function ghStateLoad() {
   const tok = process.env.GITHUB_TOKEN, repo = process.env.GITHUB_REPOSITORY;
   if (!tok || !repo) return;
@@ -455,6 +553,8 @@ client.on('messageCreate', async (m) => {
     }
     return;
   }
+  const logsStAtual = lerLogsState();
+  if (m.webhookId && logsStAtual.webhookId && m.webhookId === logsStAtual.webhookId) return; // nao logar o proprio log
   // Bots reais continuam ignorados, mas webhook precisa passar pelo filtro:
   // raid costuma usar webhook e, no Discord, webhook aparece como author.bot.
   if (m.author.bot && !m.webhookId) return;
@@ -468,7 +568,7 @@ client.on('messageCreate', async (m) => {
     content: m.content,
     attachments: m.attachments.map((a) => ({ name: a.name, url: a.url })),
   };
-  append(INBOX, rec);
+  enviarLogMensagem(m).catch(err);
   if (m.author.id === OWNER_ID) {
     // fala do dono: tag propria pra achar rapido no log
     log('DONO', { channel: m.channelId, where: rec.where, content: m.content });
@@ -544,6 +644,30 @@ client.on('messageCreate', async (m) => {
     if (c === '.menu') {
       await whSend(m.channel, menuMsg()).catch((e) => err(e));
       log('MENU', { channel: m.channelId });
+      return;
+    }
+    // .logs on/off/status — liga logs em tempo real neste canal via webhook
+    if (c === '.logs' || c === '.logs status' || c === '.logs on' || c === '.logs off') {
+      await m.delete().catch(() => {});
+      const st = lerLogsState();
+      if (c === '.logs off') {
+        st.on = false;
+        salvarLogsState(st);
+        await whSend(m.channel, 'logs **off**.').catch(() => {});
+        log('LOGS_OFF', { channel: m.channelId });
+        return;
+      }
+      if (c === '.logs on') {
+        st.on = true;
+        st.channelId = m.channelId;
+        const wh = await getLogsWebhook(st).catch((e) => { err(e); return null; });
+        if (wh) st.webhookId = wh.id;
+        salvarLogsState(st);
+        await whSend(m.channel, `logs **on** em <#${m.channelId}>.`).catch(() => {});
+        log('LOGS_ON', { channel: m.channelId, webhookId: st.webhookId });
+        return;
+      }
+      await whSend(m.channel, `logs: **${st.on ? 'on' : 'off'}**${st.channelId ? ` em <#${st.channelId}>` : ''}. use \`.logs on\` ou \`.logs off\`.`).catch(() => {});
       return;
     }
     // .cl [qtd] — apaga mensagens de uma vez (dono). sem valor = 10.
@@ -893,6 +1017,44 @@ async function varrerLinks() {
 });
 
 client.on('interactionCreate', async (i) => {
+  // botoes dos logs (so o dono)
+  if (i.isButton() && String(i.customId || '').startsWith('log_')) {
+    if (i.user.id !== OWNER_ID) return void await i.reply({ content: 'só o dono usa isso.', ephemeral: true }).catch(() => {});
+    const [acao, arg] = i.customId.split(':');
+    try {
+      if (acao === 'log_copy') {
+        const rec = logMsgCache.get(arg);
+        if (!rec) return void await i.reply({ content: 'essa mensagem saiu da memoria do bot (reiniciou ou ficou antiga).', ephemeral: true }).catch(() => {});
+        const txt = rec.content || '*sem texto*';
+        return void await i.reply({ content: 'copia daqui:\n```\n' + limparCodigo(corta(txt, 1800)) + '\n```', ephemeral: true }).catch(() => {});
+      }
+      const userId = arg;
+      if (!i.guild || !/^\d{15,25}$/.test(userId)) return void await i.reply({ content: 'id inválido.', ephemeral: true }).catch(() => {});
+      if (userId === OWNER_ID) return void await i.reply({ content: 'não vou punir o dono.', ephemeral: true }).catch(() => {});
+      if (acao === 'log_ban') {
+        await i.guild.members.ban(userId, { reason: `banido pelo botão de log por ${i.user.tag}` });
+        await i.reply({ content: `<@${userId}> banido.`, ephemeral: true }).catch(() => {});
+        log('LOG_BAN', { userId, by: i.user.id });
+        return;
+      }
+      if (acao === 'log_bl') {
+        blacklistAdd(userId, { tag: userId, motivo: `blacklist pelo botão de log por ${i.user.tag}`, by: i.user.id, criadoEm: new Date().toISOString() });
+        await i.guild.members.ban(userId, { reason: `blacklist pelo botão de log por ${i.user.tag}` }).catch((e) => log('BLACKLIST_BAN_FAIL', { userId, err: e && e.message }));
+        await i.reply({ content: `<@${userId}> colocado na blacklist e banido.`, ephemeral: true }).catch(() => {});
+        log('BLACKLIST_ADD', { userId, by: i.user.id });
+        return;
+      }
+      if (acao === 'log_unbl') {
+        const tinha = blacklistDel(userId);
+        await i.reply({ content: tinha ? `<@${userId}> removido da blacklist.` : `<@${userId}> não estava na blacklist.`, ephemeral: true }).catch(() => {});
+        log('BLACKLIST_DEL', { userId, by: i.user.id, tinha });
+        return;
+      }
+    } catch (e) {
+      err(e);
+      return void await i.reply({ content: 'falhou: ' + (e.message || e), ephemeral: true }).catch(() => {});
+    }
+  }
   // botoes do painel .fig (so o dono)
   if (i.isButton() && (i.customId === 'fig_done' || i.customId === 'fig_cancel')) {
     await i.deferUpdate().catch(() => {});
