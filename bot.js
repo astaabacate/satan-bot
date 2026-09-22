@@ -37,6 +37,10 @@ const emoStreak = new Map();
 const shortBuf = new Map(); // userId -> msgs curtas (spam W/Ww) // userId -> qtd seguida de msgs so de emoji
 const linkBuf = new Map();   // userId -> [timestamps de links]
 const crossSigBuf = new Map(); // guildId:assinatura -> [{ts,userId}] (raid com varias contas mandando igual)
+const recentMsgBuf = new Map(); // channelId -> msgs recentes p/ apagar retroativo (variações rápidas)
+const RECENT_MSG_MS = 2 * 60 * 1000;
+const CROSS_SIMILAR_MS = 60 * 1000;
+const CROSS_SIMILAR_MIN = 3;
 // Link/convite robusto: pega http(s), www e dominio com TLD realista,
 // alem de convites do Discord com espacos/zero-width/fullwidth no meio
 // (ex: discord . gg /abc, canary.discord.com/invite/abc, discord://-/invite/abc).
@@ -55,6 +59,70 @@ function normLinkText(t) {
 function temLink(t) {
   const n = normLinkText(t);
   return RE_LINK.test(n) || RE_INVITE.test(n);
+}
+function sigTextoVisual(t) {
+  return normLinkText(t)
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(RE_INVITE, ' <invite> ')
+    .replace(RE_LINK, ' <link> ')
+    .replace(/[`*_~|>#\[\](){}.,;:!?+="'\-]+/g, ' ')
+    .replace(/(.)\1{3,}/g, '$1$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function bigramas(s) {
+  const v = sigTextoVisual(s);
+  if (v.length < 2) return v ? [v] : [];
+  const out = [];
+  for (let i = 0; i < v.length - 1; i++) out.push(v.slice(i, i + 2));
+  return out;
+}
+function similarTexto(a, b) {
+  const x = sigTextoVisual(a), y = sigTextoVisual(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const mn = Math.min(x.length, y.length), mx = Math.max(x.length, y.length);
+  if (mn >= 40 && (x.includes(y) || y.includes(x)) && mn / mx >= 0.72) return true;
+  if (mn >= 12 && (x.includes(y) || y.includes(x)) && mn / mx >= 0.68) return true;
+  if (mn < 25) return false;
+  const ax = bigramas(x), by = bigramas(y);
+  const counts = new Map();
+  for (const g of ax) counts.set(g, (counts.get(g) || 0) + 1);
+  let inter = 0;
+  for (const g of by) {
+    const n = counts.get(g) || 0;
+    if (n) { inter++; counts.set(g, n - 1); }
+  }
+  return (2 * inter) / (ax.length + by.length) >= 0.82;
+}
+function registrarRecente(m, reasons, now) {
+  if (!m.guild) return [];
+  const key = m.channelId;
+  const arr = (recentMsgBuf.get(key) || []).filter((e) => now - e.ts < RECENT_MSG_MS);
+  const rec = {
+    id: m.id,
+    ts: now,
+    userId: m.author.id,
+    content: m.content || '',
+    sig: sigTextoVisual(m.content || ''),
+    len: (m.content || '').length,
+    suspeita: reasons.length > 0 || temLink(m.content || '') || (m.content || '').length > 220,
+  };
+  arr.push(rec);
+  recentMsgBuf.set(key, arr.slice(-80));
+  return arr;
+}
+async function apagarRelacionadas(m, recentes, motivo) {
+  let n = 0;
+  for (const e of recentes) {
+    if (e.id === m.id) continue;
+    if (!e.suspeita && !similarTexto(m.content || '', e.content || '')) continue;
+    if (!similarTexto(m.content || '', e.content || '') && !temLink(e.content || '')) continue;
+    const ok = await m.channel.messages.delete(e.id).then(() => true).catch(() => false);
+    if (ok) n++;
+  }
+  if (n) log('ANTIFLOOD_RETRO_VARIACAO', { canal: m.channelId, apagadas: n, motivo });
 }
 
 // assinatura da mensagem: vale pra TUDO (texto, emoji, figurinha, imagem, gif, embed)
@@ -716,6 +784,15 @@ async function varrerLinks() {
         if (arr.length >= 3 && (usuarios.size >= 3 || m.webhookId)) reasons.push('raid-repetida');
       }
 
+      // variação rápida: texto quase igual, mas com pontuação/espaço/invisível
+      // diferente. Quando bater, apaga também as cópias recentes parecidas.
+      if (suspeitaBase || (m.content || '').length >= 80) {
+        const recentes = (recentMsgBuf.get(m.channelId) || []).filter((e) => now - e.ts < CROSS_SIMILAR_MS && e.id !== m.id);
+        const parecidas = recentes.filter((e) => similarTexto(m.content || '', e.content || ''));
+        const usuarios = new Set(parecidas.map((e) => e.userId));
+        if (parecidas.length >= CROSS_SIMILAR_MIN - 1 && (usuarios.size >= 2 || m.webhookId)) reasons.push('raid-parecida');
+      }
+
     }
 
     // 2) mensagem repetida: compara com as 3 últimas do mesmo autor (pega
@@ -801,9 +878,14 @@ async function varrerLinks() {
       if (arr.length > REP_MUTE_QTD) await aplicarCastigo(m, 'mandar link 10+ vezes');
     }
 
-    if (reasons.length && m.deletable) {
-      await m.delete().catch(() => {});
-      log('ANTIFLOOD', { reason: reasons.join('+'), kind: msgKind(m), author: m.author.id, channel: m.channelId, len: m.content.length });
+    const recentes = registrarRecente(m, reasons, now);
+    if (reasons.length) {
+      await apagarRelacionadas(m, recentes, reasons.join('+')).catch(err);
+      const apagou = await m.delete().then(() => true).catch((e) => {
+        log('ANTIFLOOD_DELETE_FAIL', { reason: reasons.join('+'), author: m.author.id, channel: m.channelId, deletable: m.deletable, err: e && e.message });
+        return false;
+      });
+      log('ANTIFLOOD', { reason: reasons.join('+'), kind: msgKind(m), author: m.author.id, channel: m.channelId, len: m.content.length, apagou });
     }
   } catch (e) {
     err(e);
