@@ -72,17 +72,10 @@ const AVISO_PADRAO = {
 const PALAVRAS_LINK = [
   '*http://*',
   '*https://*',
-  '*www.*',
   '*discord.gg/*',
   '*discord.com/invite*',
   '*discordapp.com/invite*',
-  '*discord.me/*',
-  '*discord.io/*',
-  '*discord.li/*',
   '*dsc.gg/*',
-  '*invite.gg/*',
-  '*disboard.org/server*',
-  '*discordservers.com/server*',
 ];
 
 // O filtro nativo precisa pegar tambem o que antes era tratado somente no
