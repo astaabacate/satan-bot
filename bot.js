@@ -383,36 +383,57 @@ async function enviarLogMensagem(m) {
   partes.push(conteudo ? limparCodigo(conteudo) : '*sem texto*');
   if (anexos.length) partes.push('\n**Anexos:**\n' + anexos.join('\n'));
   if (m.stickers && m.stickers.size) partes.push('\n**Stickers:** ' + [...m.stickers.values()].map((x) => x.name || x.id).join(', '));
-  const desc = corta(partes.join('\n'), 3900);
+  const desc = corta(partes.join('\n'), 3600);
   const tag = m.author.tag || m.author.username || m.author.id;
   await wh.send({
     username: corta(tag, 80),
     avatarURL: avatar || undefined,
     allowedMentions: { parse: [] },
-    embeds: [{
-      color: 8912896,
-      author: { name: `${tag} (${m.author.id})`, ...(avatar ? { icon_url: avatar } : {}) },
-      description: desc,
-      fields: [
-        { name: 'Canal', value: `<#${m.channelId}>`, inline: true },
-        { name: 'Mensagem', value: `\`${m.id}\``, inline: true },
-        { name: 'Conta', value: `<@${m.author.id}>`, inline: true },
+    flags: 1 << 15,
+    components: [{
+      type: 17,
+      accent_color: 8912896,
+      components: [
+        {
+          type: 9,
+          components: [
+            { type: 10, content: `**${tag}**` },
+            { type: 10, content: `-# ID: ${m.author.id}` },
+          ],
+          ...(avatar ? { accessory: { type: 11, media: { url: avatar }, description: tag } } : {}),
+        },
+        { type: 14, spacing: 1, divider: true },
+        { type: 10, content: `**Canal:** <#${m.channelId}>\n**Mensagem:** \`${m.id}\`\n**Conta:** <@${m.author.id}>` },
+        { type: 14, spacing: 1, divider: true },
+        { type: 10, content: `**Conteúdo:**\n${desc}` },
+        { type: 14, spacing: 1, divider: true },
+        { type: 1, components: [
+          { type: 2, style: 4, label: 'Banir', custom_id: `log_ban:${m.author.id}` },
+          { type: 2, style: 4, label: 'Blacklist', custom_id: `log_bl:${m.author.id}` },
+          { type: 2, style: 2, label: 'Tirar BL', custom_id: `log_unbl:${m.author.id}` },
+          { type: 2, style: 1, label: 'Copiar msg', custom_id: `log_copy:${logId}` },
+        ]},
       ],
-      timestamp: new Date().toISOString(),
     }],
-    components: [{ type: 1, components: [
-      { type: 2, style: 4, label: 'Banir', custom_id: `log_ban:${m.author.id}` },
-      { type: 2, style: 4, label: 'Blacklist', custom_id: `log_bl:${m.author.id}` },
-      { type: 2, style: 2, label: 'Tirar BL', custom_id: `log_unbl:${m.author.id}` },
-      { type: 2, style: 1, label: 'Copiar msg', custom_id: `log_copy:${logId}` },
-    ]}],
   }).catch((e) => log('LOG_SEND_FAIL', { err: e && e.message }));
 }
 async function enviarLogSistema(texto) {
   const wh = await getLogsWebhook().catch(() => null);
   if (!wh) return;
-  await wh.send({ username: 'Satan Logs', allowedMentions: { parse: [] }, embeds: [{ color: 0xff4444, description: String(texto).slice(0, 3900), timestamp: new Date().toISOString() }] }).catch(() => {});
+  await wh.send({
+    username: 'Satan Logs',
+    allowedMentions: { parse: [] },
+    flags: 1 << 15,
+    components: [{
+      type: 17,
+      accent_color: 0xff4444,
+      components: [
+        { type: 10, content: String(texto).slice(0, 3900) },
+      ],
+    }],
+  }).catch(() => {});
 }
+
 
 const client = new Client({
   intents: [
