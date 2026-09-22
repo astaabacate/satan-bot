@@ -1017,42 +1017,49 @@ async function varrerLinks() {
 });
 
 client.on('interactionCreate', async (i) => {
-  // botoes dos logs (so o dono)
+  // botoes dos logs (so o dono). Os botoes ficam na mensagem do webhook;
+  // as acoes tambem voltam pro webhook de logs. O unico retorno fora disso e
+  // o Copiar msg, porque o Discord nao deixa bot copiar direto pro clipboard.
   if (i.isButton() && String(i.customId || '').startsWith('log_')) {
-    if (i.user.id !== OWNER_ID) return void await i.reply({ content: 'só o dono usa isso.', ephemeral: true }).catch(() => {});
     const [acao, arg] = i.customId.split(':');
     try {
+      if (i.user.id !== OWNER_ID) {
+        await i.deferUpdate().catch(() => {});
+        return;
+      }
       if (acao === 'log_copy') {
         const rec = logMsgCache.get(arg);
         if (!rec) return void await i.reply({ content: 'essa mensagem saiu da memoria do bot (reiniciou ou ficou antiga).', ephemeral: true }).catch(() => {});
         const txt = rec.content || '*sem texto*';
         return void await i.reply({ content: 'copia daqui:\n```\n' + limparCodigo(corta(txt, 1800)) + '\n```', ephemeral: true }).catch(() => {});
       }
+      await i.deferUpdate().catch(() => {});
       const userId = arg;
-      if (!i.guild || !/^\d{15,25}$/.test(userId)) return void await i.reply({ content: 'id inválido.', ephemeral: true }).catch(() => {});
-      if (userId === OWNER_ID) return void await i.reply({ content: 'não vou punir o dono.', ephemeral: true }).catch(() => {});
+      if (!i.guild || !/^\d{15,25}$/.test(userId)) return void await enviarLogSistema('botao de log falhou: id invalido.');
+      if (userId === OWNER_ID) return void await enviarLogSistema('botao de log ignorado: nao vou punir o dono.');
       if (acao === 'log_ban') {
         await i.guild.members.ban(userId, { reason: `banido pelo botão de log por ${i.user.tag}` });
-        await i.reply({ content: `<@${userId}> banido.`, ephemeral: true }).catch(() => {});
+        await enviarLogSistema(`🔨 <@${userId}> foi banido pelo botão do log.`);
         log('LOG_BAN', { userId, by: i.user.id });
         return;
       }
       if (acao === 'log_bl') {
         blacklistAdd(userId, { tag: userId, motivo: `blacklist pelo botão de log por ${i.user.tag}`, by: i.user.id, criadoEm: new Date().toISOString() });
         await i.guild.members.ban(userId, { reason: `blacklist pelo botão de log por ${i.user.tag}` }).catch((e) => log('BLACKLIST_BAN_FAIL', { userId, err: e && e.message }));
-        await i.reply({ content: `<@${userId}> colocado na blacklist e banido.`, ephemeral: true }).catch(() => {});
+        await enviarLogSistema(`⛔ <@${userId}> foi colocado na blacklist e banido pelo botão do log.`);
         log('BLACKLIST_ADD', { userId, by: i.user.id });
         return;
       }
       if (acao === 'log_unbl') {
         const tinha = blacklistDel(userId);
-        await i.reply({ content: tinha ? `<@${userId}> removido da blacklist.` : `<@${userId}> não estava na blacklist.`, ephemeral: true }).catch(() => {});
+        await enviarLogSistema(tinha ? `✅ <@${userId}> foi removido da blacklist pelo botão do log.` : `ℹ️ <@${userId}> não estava na blacklist.`);
         log('BLACKLIST_DEL', { userId, by: i.user.id, tinha });
         return;
       }
     } catch (e) {
       err(e);
-      return void await i.reply({ content: 'falhou: ' + (e.message || e), ephemeral: true }).catch(() => {});
+      await enviarLogSistema('botao de log falhou: ' + (e.message || e)).catch(() => {});
+      return;
     }
   }
   // botoes do painel .fig (so o dono)
