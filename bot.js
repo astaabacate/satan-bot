@@ -303,6 +303,8 @@ async function carregarAvatarWebhook() {
   AVATAR_B64 = 'data:image/png;base64,' + buf.toString('base64');
 }
 const whCache = new Map(); // channelId -> webhook
+const ownWebhookIds = new Set();
+function isOwnWebhookId(id) { return !!id && ownWebhookIds.has(id); }
 async function getWebhook(ch) {
   if (whCache.has(ch.id)) return whCache.get(ch.id);
   let wh = null;
@@ -312,6 +314,7 @@ async function getWebhook(ch) {
     if (!AVATAR_B64) await carregarAvatarWebhook();
     wh = await ch.createWebhook({ name: 'Satan', avatar: AVATAR_B64 });
   }
+  if (wh && wh.id) ownWebhookIds.add(wh.id);
   whCache.set(ch.id, wh);
   return wh;
 }
@@ -362,6 +365,7 @@ async function getLogsWebhook(st = lerLogsState()) {
     st.webhookId = wh.id;
     salvarLogsState(st);
   }
+  if (wh && wh.id) ownWebhookIds.add(wh.id);
   logWhCache.set(wh.id, wh);
   return wh;
 }
@@ -750,7 +754,7 @@ client.on('messageCreate', async (m) => {
     return;
   }
   const logsStAtual = lerLogsState();
-  if (m.webhookId && logsStAtual.webhookId && m.webhookId === logsStAtual.webhookId) return; // nao logar o proprio log
+  if (m.webhookId && (isOwnWebhookId(m.webhookId) || (logsStAtual.webhookId && m.webhookId === logsStAtual.webhookId))) return; // nao filtrar/logar webhooks do proprio bot
   // Bots reais continuam ignorados, mas webhook precisa passar pelo filtro:
   // raid costuma usar webhook e, no Discord, webhook aparece como author.bot.
   if (m.author.bot && !m.webhookId) return;
@@ -1016,7 +1020,7 @@ async function varrerFlood() {
     for (const ch of [...g.channels.cache.values()]) {
       if (!ch.isTextBased()) continue;
       try {
-        const msgs = (await ch.messages.fetch({ limit: 100 })).filter((x) => (!x.author.bot || x.webhookId) && x.author.id !== OWNER_ID && x.deletable);
+        const msgs = (await ch.messages.fetch({ limit: 100 })).filter((x) => (!x.author.bot || x.webhookId) && !isOwnWebhookId(x.webhookId) && x.author.id !== OWNER_ID && x.deletable);
         const por = {};
         for (const x of [...msgs.values()]) (por[x.author.id] = por[x.author.id] || []).push(x);
         const alvos = new Set();
@@ -1048,7 +1052,7 @@ async function varrerLinks() {
       if (!ch.isTextBased()) continue;
       try {
         const msgs = await ch.messages.fetch({ limit: 100 });
-        const alvos = msgs.filter((x) => (!x.author.bot || x.webhookId) && x.author.id !== OWNER_ID && temLink(x.content || '') && x.deletable);
+        const alvos = msgs.filter((x) => (!x.author.bot || x.webhookId) && !isOwnWebhookId(x.webhookId) && x.author.id !== OWNER_ID && temLink(x.content || '') && x.deletable);
         if (!alvos.size) continue;
         await ch.bulkDelete(alvos, true).catch(async () => {
           for (const x of [...alvos.values()]) await x.delete().catch(() => {});
