@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { figCreate } = require('./fig.js');
-const automod = require('./automod.js'); // automod NATIVO do discord (bloqueia antes de aparecer)
 
 // token vem do .env ao lado — nao precisa de variavel de ambiente nem de chave na mao
 if (!process.env.DISCORD_TOKEN) {
@@ -18,7 +17,6 @@ const OWNER_ID = '1521612392105250836';          // só o dono usa comandos
 const GUILD_OFICIAL = '1484007517091528914';       // nuke/paineis sempre aqui, nunca no server de teste
 // servers onde o bot fica / boas-vindas ativas (teste + oficial)
 const INFERNO_GUILDS = new Set(['1525806672839442633', '1484007517091528914']);
-const INBOX = path.join(ROOT, 'inbox.jsonl');
 const ERRORS = path.join(ROOT, 'errors.log');
 
 // anti-flood (ajustavel via antispam_config.json)
@@ -31,17 +29,106 @@ const penaltyUntil = new Map();
 
 // castigo (timeout) progressivo: repetiu 10+ vezes -> 1h, e +1h a cada reincidencia
 const MUTE_STATE = path.join(ROOT, 'mute_state.json');
+const LOGS_STATE = path.join(ROOT, 'logs_state.json');
+const BLACKLIST_STATE = path.join(ROOT, 'blacklist_state.json');
 const MUTE_BASE_MS = 60 * 60 * 1000;
 const REP_MUTE_QTD = 10;
 const repStreak = new Map(); // userId -> { sig, count }
 const emoStreak = new Map();
 const shortBuf = new Map(); // userId -> msgs curtas (spam W/Ww) // userId -> qtd seguida de msgs so de emoji
 const linkBuf = new Map();   // userId -> [timestamps de links]
-const RE_LINK = /(https?:\/\/|discord\.gg\/|discord\.com\/invite|discordapp\.com\/)/i;
+const crossSigBuf = new Map(); // guildId:assinatura -> [{ts,userId}] (raid com varias contas mandando igual)
+const recentMsgBuf = new Map(); // channelId -> msgs recentes p/ apagar retroativo (variações rápidas)
+const RECENT_MSG_MS = 2 * 60 * 1000;
+const CROSS_SIMILAR_MS = 60 * 1000;
+const CROSS_SIMILAR_MIN = 3;
+// Link/convite robusto: pega http(s), www e dominio com TLD realista,
+// alem de convites do Discord com espacos/zero-width/fullwidth no meio
+// (ex: discord . gg /abc, canary.discord.com/invite/abc, discord://-/invite/abc).
+const RE_LINK = /(?:https?:\/\/|www\.|\b[\p{L}0-9][\p{L}0-9-]{1,63}\.(?:[\p{L}]{2,24}|xn--[a-z0-9-]{2,59})(?:\b|\/))/iu;
+const RE_INVITE = /(?:\b(?:(?:canary|ptb)\.)?discord(?:app)?\.com\/invite\/|\bdiscord\.gg\/|\bdiscord\.me\/|\bdiscord\.io\/|\bdiscord\.li\/|\bdsc\.gg\/|\binvite\.gg\/|\bdisboard\.org\/server\b|\bdiscordservers\.com\/server\b|discord:\/\/-\/invite\/)/i;
+const RE_SEPARADORES_LINK = /\s*([.\/])\s*/g;
+function normLinkText(t) {
+  return String(t || '')
+    .normalize('NFKC')
+    .replace(RE_INV, '')
+    .replace(/[。｡]/g, '.')
+    .replace(/[⁄∕／\\]/g, '/')
+    .replace(RE_SEPARADORES_LINK, '$1')
+    .toLowerCase();
+}
+function temLink(t) {
+  const n = normLinkText(t);
+  return RE_LINK.test(n) || RE_INVITE.test(n);
+}
+function sigTextoVisual(t) {
+  return normLinkText(t)
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(RE_INVITE, ' <invite> ')
+    .replace(RE_LINK, ' <link> ')
+    .replace(/[`*_~|>#\[\](){}.,;:!?+="'\-]+/g, ' ')
+    .replace(/(.)\1{3,}/g, '$1$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function bigramas(s) {
+  const v = sigTextoVisual(s);
+  if (v.length < 2) return v ? [v] : [];
+  const out = [];
+  for (let i = 0; i < v.length - 1; i++) out.push(v.slice(i, i + 2));
+  return out;
+}
+function similarTexto(a, b) {
+  const x = sigTextoVisual(a), y = sigTextoVisual(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const mn = Math.min(x.length, y.length), mx = Math.max(x.length, y.length);
+  if (mn >= 40 && (x.includes(y) || y.includes(x)) && mn / mx >= 0.72) return true;
+  if (mn >= 12 && (x.includes(y) || y.includes(x)) && mn / mx >= 0.68) return true;
+  if (mn < 25) return false;
+  const ax = bigramas(x), by = bigramas(y);
+  const counts = new Map();
+  for (const g of ax) counts.set(g, (counts.get(g) || 0) + 1);
+  let inter = 0;
+  for (const g of by) {
+    const n = counts.get(g) || 0;
+    if (n) { inter++; counts.set(g, n - 1); }
+  }
+  return (2 * inter) / (ax.length + by.length) >= 0.82;
+}
+function registrarRecente(m, reasons, now) {
+  if (!m.guild) return [];
+  const key = m.channelId;
+  const arr = (recentMsgBuf.get(key) || []).filter((e) => now - e.ts < RECENT_MSG_MS);
+  const rec = {
+    id: m.id,
+    ts: now,
+    userId: m.author.id,
+    content: m.content || '',
+    sig: sigTextoVisual(m.content || ''),
+    len: (m.content || '').length,
+    suspeita: reasons.length > 0 || temLink(m.content || '') || (m.content || '').length > 220,
+  };
+  arr.push(rec);
+  recentMsgBuf.set(key, arr.slice(-80));
+  return arr;
+}
+async function apagarRelacionadas(m, recentes, motivo) {
+  let n = 0;
+  for (const e of recentes) {
+    if (e.id === m.id) continue;
+    if (!e.suspeita && !similarTexto(m.content || '', e.content || '')) continue;
+    if (!similarTexto(m.content || '', e.content || '') && !temLink(e.content || '')) continue;
+    const ok = await m.channel.messages.delete(e.id).then(() => true).catch(() => false);
+    if (ok) n++;
+  }
+  if (n) log('ANTIFLOOD_RETRO_VARIACAO', { canal: m.channelId, apagadas: n, motivo });
+}
 
 // assinatura da mensagem: vale pra TUDO (texto, emoji, figurinha, imagem, gif, embed)
 function msgSig(m) {
-  const txt = (m.content || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const txt = sigTextoVisual(m.content || '');
   const em = m.content ? (m.content.match(/<(a?):\w+:(\d+)>/g) || []).join(',') : '';
   const st = m.stickers && m.stickers.size ? [...m.stickers.values()].map((s) => s.id || s.name).join(',') : '';
   const at = m.attachments.size ? [...m.attachments.values()].map((a) => a.width || a.height ? `img:${a.width}x${a.height}` : `f:${a.name}`).join(',') : '';
@@ -116,7 +203,7 @@ function menuMsg() {
               '',
               '**`.bump`**',
               '',
-              '**`.automod`**',
+              '**`.logs on / off`**',
             ].join('\n'),
           },
           { type: 14, spacing: 2, divider: true },
@@ -200,9 +287,6 @@ const log = (tag, obj) => {
   console.log(line);
 };
 
-function append(file, obj) {
-  fs.appendFileSync(file, JSON.stringify(obj) + '\n');
-}
 
 function err(e) {
   const s = `${new Date().toISOString()} ${e && e.stack ? e.stack : e}\n`;
@@ -219,6 +303,8 @@ async function carregarAvatarWebhook() {
   AVATAR_B64 = 'data:image/png;base64,' + buf.toString('base64');
 }
 const whCache = new Map(); // channelId -> webhook
+const ownWebhookIds = new Set();
+function isOwnWebhookId(id) { return !!id && ownWebhookIds.has(id); }
 async function getWebhook(ch) {
   if (whCache.has(ch.id)) return whCache.get(ch.id);
   let wh = null;
@@ -228,6 +314,7 @@ async function getWebhook(ch) {
     if (!AVATAR_B64) await carregarAvatarWebhook();
     wh = await ch.createWebhook({ name: 'Satan', avatar: AVATAR_B64 });
   }
+  if (wh && wh.id) ownWebhookIds.add(wh.id);
   whCache.set(ch.id, wh);
   return wh;
 }
@@ -240,82 +327,175 @@ async function whEdit(ch, messageId, payload) {
   return wh.editMessage(messageId, payload);
 }
 
+const logWhCache = new Map();
+const logMsgCache = new Map(); // logId -> { content, authorId, guildId, channelId }
+const logQueue = [];
+let logSending = false;
+let logSeq = 0;
+function lerLogsState() { return readJsonSafe(LOGS_STATE, { on: false, channelId: '', webhookId: '' }); }
+function salvarLogsState(st) { fs.writeFileSync(LOGS_STATE, JSON.stringify(st, null, 2)); ghStateSyncTick(); }
+function lerBlacklist() { return readJsonSafe(BLACKLIST_STATE, { users: {} }); }
+function salvarBlacklist(st) { fs.writeFileSync(BLACKLIST_STATE, JSON.stringify(st, null, 2)); ghStateSyncTick(); }
+function blacklistTem(userId) { const st = lerBlacklist(); return !!(st.users && st.users[userId]); }
+function blacklistAdd(userId, dados = {}) {
+  const st = lerBlacklist();
+  st.users = st.users || {};
+  st.users[userId] = { userId, ...st.users[userId], ...dados, atualizadoEm: new Date().toISOString() };
+  salvarBlacklist(st);
+  return st.users[userId];
+}
+function blacklistDel(userId) {
+  const st = lerBlacklist();
+  st.users = st.users || {};
+  const tinha = !!st.users[userId];
+  delete st.users[userId];
+  salvarBlacklist(st);
+  return tinha;
+}
+async function getLogsWebhook(st = lerLogsState()) {
+  if (!st.on || !st.channelId) return null;
+  if (st.webhookId && logWhCache.has(st.webhookId)) return logWhCache.get(st.webhookId);
+  const ch = await client.channels.fetch(st.channelId).catch(() => null);
+  if (!ch || !ch.isTextBased()) return null;
+  const hooks = await ch.fetchWebhooks().catch(() => null);
+  let wh = hooks ? (st.webhookId && hooks.get(st.webhookId)) || hooks.find((h) => h.name === 'Satan Logs') : null;
+  if (!wh) {
+    if (!AVATAR_B64) await carregarAvatarWebhook().catch(() => {});
+    wh = await ch.createWebhook({ name: 'Satan Logs', ...(AVATAR_B64 ? { avatar: AVATAR_B64 } : {}) });
+    st.webhookId = wh.id;
+    salvarLogsState(st);
+  }
+  if (wh && wh.id) ownWebhookIds.add(wh.id);
+  logWhCache.set(wh.id, wh);
+  return wh;
+}
+function corta(s, n) {
+  s = String(s || '');
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+function limparCodigo(s) { return String(s || '').replace(/```/g, 'ʼʼʼ'); }
+function esperar(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+function enfileirarLog(payload) {
+  logQueue.push(payload);
+  drenarLogs().catch(err);
+}
+async function drenarLogs() {
+  if (logSending) return;
+  logSending = true;
+  try {
+    while (logQueue.length) {
+      const payload = logQueue.shift();
+      const wh = await getLogsWebhook().catch(() => null);
+      if (!wh) { logQueue.length = 0; break; }
+      await wh.send(payload).catch((e) => log('LOG_SEND_FAIL', { err: e && e.message }));
+      await esperar(250);
+    }
+  } finally { logSending = false; }
+}
+function cardLogSimples(titulo, linhas, cor = 8912896) {
+  const txt = [titulo ? `### ${titulo}` : '', ...linhas].filter(Boolean).join('\n');
+  return {
+    username: 'Satan Logs',
+    allowedMentions: { parse: [] },
+    flags: 1 << 15,
+    components: [{ type: 17, accent_color: cor, components: [{ type: 10, content: corta(txt, 3900) }] }],
+  };
+}
+function nomeUser(u) { return (u && (u.tag || u.username || u.id)) || 'desconhecido'; }
+function avatarUser(u) { return u && u.displayAvatarURL ? u.displayAvatarURL({ size: 128 }) : null; }
+function fmtCanal(id) { return id ? `<#${id}>` : '`-`'; }
+function fmtUser(id) { return id ? `<@${id}>` : '`-`'; }
+function conteudoMsg(m) {
+  if (!m) return '*sem texto*';
+  const partes = [];
+  const content = m.content || '';
+  partes.push(content ? limparCodigo(content) : '*sem texto*');
+  if (m.attachments && m.attachments.size) partes.push('\n**Anexos:**\n' + [...m.attachments.values()].map((a) => a.url || a.name).slice(0, 10).join('\n'));
+  if (m.stickers && m.stickers.size) partes.push('\n**Stickers:** ' + [...m.stickers.values()].map((x) => x.name || x.id).join(', '));
+  if (m.embeds && m.embeds.length) partes.push(`\n**Embeds:** ${m.embeds.length}`);
+  return corta(partes.join('\n'), 3600);
+}
+function logEvento(titulo, linhas, cor) { enfileirarLog(cardLogSimples(titulo, linhas, cor)); }
+async function enviarLogMensagem(m) {
+  const st = lerLogsState();
+  if (!st.on || !m.guild || m.webhookId === st.webhookId) return;
+  const logId = String(++logSeq);
+  const avatar = m.author.displayAvatarURL ? m.author.displayAvatarURL({ size: 128 }) : null;
+  const conteudo = m.content || '';
+  logMsgCache.set(logId, { content: conteudo, authorId: m.author.id, guildId: m.guild.id, channelId: m.channelId, msgId: m.id });
+  if (logMsgCache.size > 500) logMsgCache.delete(logMsgCache.keys().next().value);
+  const desc = conteudoMsg(m);
+  const tag = m.author.tag || m.author.username || m.author.id;
+  enfileirarLog({
+    username: corta(tag, 80),
+    avatarURL: avatar || undefined,
+    allowedMentions: { parse: [] },
+    flags: 1 << 15,
+    components: [{
+      type: 17,
+      accent_color: 8912896,
+      components: [
+        {
+          type: 9,
+          components: [
+            { type: 10, content: `**${tag}**` },
+            { type: 10, content: `-# ID: ${m.author.id}` },
+          ],
+          ...(avatar ? { accessory: { type: 11, media: { url: avatar }, description: tag } } : {}),
+        },
+        { type: 14, spacing: 1, divider: true },
+        { type: 10, content: `**Canal:** <#${m.channelId}>\n**Mensagem:** \`${m.id}\`\n**Conta:** <@${m.author.id}>` },
+        { type: 14, spacing: 1, divider: true },
+        { type: 10, content: `**Conteúdo:**\n${desc}` },
+        { type: 14, spacing: 1, divider: true },
+        { type: 1, components: [
+          { type: 2, style: 4, label: 'Banir', custom_id: `log_ban:${m.author.id}` },
+          { type: 2, style: 4, label: 'Blacklist', custom_id: `log_bl:${m.author.id}` },
+          { type: 2, style: 2, label: 'Tirar BL', custom_id: `log_unbl:${m.author.id}` },
+          { type: 2, style: 1, label: 'Copiar msg', custom_id: `log_copy:${logId}` },
+        ]},
+      ],
+    }],
+  });
+}
+async function enviarLogSistema(texto) {
+  const st = lerLogsState();
+  if (!st.on) return;
+  enfileirarLog({
+    username: 'Satan Logs',
+    allowedMentions: { parse: [] },
+    flags: 1 << 15,
+    components: [{
+      type: 17,
+      accent_color: 0xff4444,
+      components: [
+        { type: 10, content: String(texto).slice(0, 3900) },
+      ],
+    }],
+  });
+}
+
+
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildMembers,
   ],
-  partials: [Partials.Channel, Partials.Message],
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
 });
-
-// ---------- automod nativo do discord ----------
-// as regras vivem no servidor do discord (nao no bot), entao bloqueiam a mensagem
-// ANTES dela aparecer no canal e continuam valendo enquanto o bot reinicia
-automod.usar({ log, err });
-automod.criarSeFaltar();
-const automodBlocks = new Map(); // userId -> [timestamps] de bloqueios recentes do automod
-
-// manda uma DM pro dono (usado quando o automod nao consegue fazer algo)
-async function avisarDono(texto) {
-  try {
-    const u = await client.users.fetch(OWNER_ID);
-    await u.send(texto);
-    log('AVISO_DONO', { texto });
-  } catch (e) { log('AVISO_DONO_FAIL', { err: e && e.message }); }
-}
-
-let automodUltimoResumo = '';
-async function automodSync(tag) {
-  // espera o estado do repo chegar antes de mexer nas regras: sincronizar com a
-  // config local (vazia) apagaria regra que na verdade ainda existe
-  await ghStatePronto.catch(() => {});
-  const cfg = automod.ler();
-  for (const gid of INFERNO_GUILDS) {
-    const g = client.guilds.cache.get(gid);
-    if (!g) continue;
-    const cfgAntes = JSON.stringify(cfg);
-    const r = await automod.sincronizar(g, cfg);
-    // A absorcao registra o conteudo da regra antiga no arquivo persistente;
-    // isso precisa ser salvo mesmo sem o dono jamais mandar .automod.
-    if (JSON.stringify(cfg) !== cfgAntes) {
-      automod.salvar(cfg);
-      ghStateSyncTick();
-    }
-    let regras = [];
-    try {
-      regras = (await automod.listar(g)).map((x) => ({ nome: x.nome, nosso: x.nosso, on: x.on, gatilho: x.gatilho, acoes: x.acoes }));
-    } catch (e) { err(e); }
-    // diario no automod_status.json (vai pro repo): da pra conferir de fora se as
-    // regras existem mesmo no servidor e qual foi o ultimo erro
-    const errosAntes = (automod.statusDe(gid) || {}).erros || [];
-    const absorvida = r.absorvida || (cfg.absorvida && cfg.absorvida[gid] && cfg.absorvida[gid].nome) || null;
-    automod.registrarStatus(gid, { on: cfg.on, permiteGerenciar: automod.podeGerenciar(g), criadas: r.criadas, ligadas: r.ligadas, removidas: r.removidas, adotadas: r.adotadas, absorvida, avisos: r.avisos, erros: r.erros, regras });
-    const novosErros = r.erros.filter((e) => !errosAntes.includes(e));
-    if (novosErros.length) avisarDono(`automod (servidor ${gid}) deu erro:\n${novosErros.join('\n')}`).catch(err);
-
-    const resumo = { guild: gid, on: cfg.on, criadas: r.criadas, ligadas: r.ligadas, ok: r.ok.length, off: r.off, removidas: r.removidas, adotadas: r.adotadas, avisos: r.avisos, erros: r.erros };
-    const json = JSON.stringify(resumo);
-    if (json !== automodUltimoResumo) { // so loga quando muda, senao a cada 10min enchia o log
-      log('AUTOMOD_SYNC', { tag, ...resumo });
-      automodUltimoResumo = json;
-    }
-  }
-  return cfg;
-}
-
-// reconfere de tempo em tempo: se alguem apagar/desligar a regra no painel do
-// discord, o bot recria sozinho (o discord nao avisa o bot direito sobre isso)
-setInterval(() => { automodSync('tick').catch(err); }, 10 * 60 * 1000);
 
 client.once('ready', async () => {
   log('READY', { user: client.user.tag, id: client.user.id, guilds: client.guilds.cache.size });
   client.user.setActivity('o sofrimento dos condenados', { type: 3 });
   if (typeof varrerLinks === 'function') varrerLinks().catch(err); else err(new Error('varrerLinks ausente no ready'));
   if (typeof varrerFlood === 'function') varrerFlood().catch(err); else err(new Error('varrerFlood ausente no ready'));
-  automodSync('ready').catch(err); // liga/confere as regras do automod nativo
   (async () => {
     const stN = readJsonSafe(NUKE_STATE, {});
     if (stN && stN.on === true && stN.nextAt) {
@@ -347,6 +527,20 @@ client.on('guildCreate', async (g) => {
 // membro novo no inferno -> manda as boas-vindas na DM
 client.on('guildMemberAdd', async (member) => {
   if (!INFERNO_GUILDS.has(member.guild.id)) return;
+  if (!member.user.bot) logEvento('🟢 membro entrou', [
+    `**Conta:** <@${member.id}>`,
+    `**Nome:** ${member.user.tag}`,
+    `**ID:** ${member.id}`,
+    `**Criada:** <t:${Math.floor(member.user.createdTimestamp / 1000)}:F>`,
+  ], 0x2ecc71);
+  if (blacklistTem(member.id)) {
+    try {
+      await member.ban({ reason: 'blacklist: entrou novamente' });
+      log('BLACKLIST_AUTO_BAN', { user: member.id, tag: member.user.tag, guild: member.guild.id });
+      enviarLogSistema(`🚫 <@${member.id}> (${member.user.tag}) entrou e foi banido automaticamente pela blacklist.`).catch(() => {});
+    } catch (e) { err(e); }
+    return;
+  }
   try {
     await member.send(WELCOME_MSG);
     log('WELCOME', { user: member.id, tag: member.user.tag });
@@ -355,8 +549,136 @@ client.on('guildMemberAdd', async (member) => {
   }
 });
 
+client.on('guildMemberRemove', async (member) => {
+  try {
+    if (!member.guild || !INFERNO_GUILDS.has(member.guild.id) || (member.user && member.user.bot)) return;
+    logEvento('🔴 membro saiu', [
+      `**Conta:** ${fmtUser(member.id)}`,
+      `**Nome:** ${nomeUser(member.user)}`,
+      `**ID:** ${member.id}`,
+    ], 0xe74c3c);
+  } catch (e) { err(e); }
+});
+
+client.on('guildMemberUpdate', async (oldM, newM) => {
+  try {
+    if (!newM.guild || !INFERNO_GUILDS.has(newM.guild.id) || (newM.user && newM.user.bot)) return;
+    const linhas = [`**Conta:** ${fmtUser(newM.id)}`, `**ID:** ${newM.id}`];
+    if ((oldM.nickname || '') !== (newM.nickname || '')) linhas.push(`**Nick:** \`${oldM.nickname || '-'}\` → \`${newM.nickname || '-'}\``);
+    const oldRoles = oldM.roles && oldM.roles.cache ? new Set(oldM.roles.cache.keys()) : new Set();
+    const newRoles = newM.roles && newM.roles.cache ? new Set(newM.roles.cache.keys()) : new Set();
+    const add = [...newRoles].filter((id) => !oldRoles.has(id) && id !== newM.guild.id);
+    const rem = [...oldRoles].filter((id) => !newRoles.has(id) && id !== newM.guild.id);
+    if (add.length) linhas.push(`**Cargos +:** ${add.map((id) => `<@&${id}>`).join(' ')}`);
+    if (rem.length) linhas.push(`**Cargos -:** ${rem.map((id) => `<@&${id}>`).join(' ')}`);
+    const oldTo = oldM.communicationDisabledUntilTimestamp || 0;
+    const newTo = newM.communicationDisabledUntilTimestamp || 0;
+    if (oldTo !== newTo) linhas.push(newTo ? `**Timeout:** até <t:${Math.floor(newTo / 1000)}:F>` : '**Timeout:** removido');
+    if (linhas.length > 2) logEvento('📝 membro atualizado', linhas, 0xf1c40f);
+  } catch (e) { err(e); }
+});
+
+client.on('guildBanAdd', async (ban) => {
+  try {
+    if (!ban.guild || !INFERNO_GUILDS.has(ban.guild.id) || (ban.user && ban.user.bot)) return;
+    logEvento('🚫 membro banido', [`**Conta:** ${fmtUser(ban.user.id)}`, `**Nome:** ${nomeUser(ban.user)}`, `**ID:** ${ban.user.id}`], 0xe74c3c);
+  } catch (e) { err(e); }
+});
+
+client.on('guildBanRemove', async (ban) => {
+  try {
+    if (!ban.guild || !INFERNO_GUILDS.has(ban.guild.id) || (ban.user && ban.user.bot)) return;
+    logEvento('✅ membro desbanido', [`**Conta:** ${fmtUser(ban.user.id)}`, `**Nome:** ${nomeUser(ban.user)}`, `**ID:** ${ban.user.id}`], 0x2ecc71);
+  } catch (e) { err(e); }
+});
+
+client.on('voiceStateUpdate', async (oldS, newS) => {
+  try {
+    const guild = newS.guild || oldS.guild;
+    const member = newS.member || oldS.member;
+    if (!guild || !member || !INFERNO_GUILDS.has(guild.id) || (member.user && member.user.bot)) return;
+    const linhas = [`**Conta:** ${fmtUser(member.id)}`, `**ID:** ${member.id}`];
+    if (!oldS.channelId && newS.channelId) linhas.push(`**Entrou na call:** ${fmtCanal(newS.channelId)}`);
+    else if (oldS.channelId && !newS.channelId) linhas.push(`**Saiu da call:** ${fmtCanal(oldS.channelId)}`);
+    else if (oldS.channelId !== newS.channelId) linhas.push(`**Mudou de call:** ${fmtCanal(oldS.channelId)} → ${fmtCanal(newS.channelId)}`);
+    if (oldS.selfMute !== newS.selfMute) linhas.push(`**Mic:** ${newS.selfMute ? 'mutado' : 'desmutado'}`);
+    if (oldS.selfDeaf !== newS.selfDeaf) linhas.push(`**Áudio:** ${newS.selfDeaf ? 'surdo' : 'ouvindo'}`);
+    if (oldS.streaming !== newS.streaming) linhas.push(`**Stream:** ${newS.streaming ? 'iniciou' : 'parou'}`);
+    if (oldS.selfVideo !== newS.selfVideo) linhas.push(`**Câmera:** ${newS.selfVideo ? 'ligou' : 'desligou'}`);
+    if (linhas.length > 2) logEvento('🔊 call', linhas, 0x3498db);
+  } catch (e) { err(e); }
+});
+
+client.on('messageUpdate', async (oldM, newM) => {
+  try {
+    if (!newM.guild || !INFERNO_GUILDS.has(newM.guild.id)) return;
+    if (newM.webhookId && lerLogsState().webhookId === newM.webhookId) return;
+    if (newM.author && newM.author.bot && !newM.webhookId) return;
+    const oldTxt = oldM && oldM.content ? oldM.content : '';
+    const newTxt = newM && newM.content ? newM.content : '';
+    if (oldTxt === newTxt) return;
+    logEvento('✏️ mensagem editada', [
+      `**Conta:** ${fmtUser(newM.author && newM.author.id)}`,
+      `**Canal:** ${fmtCanal(newM.channelId)}`,
+      `**Mensagem:** \`${newM.id}\``,
+      `**Antes:**
+${corta(limparCodigo(oldTxt || '*sem cache*'), 1200)}`,
+      `**Depois:**
+${corta(limparCodigo(newTxt || '*sem texto*'), 1200)}`,
+    ], 0xf1c40f);
+  } catch (e) { err(e); }
+});
+
+client.on('messageDelete', async (m) => {
+  try {
+    if (!m.guild || !INFERNO_GUILDS.has(m.guild.id)) return;
+    if (m.webhookId && lerLogsState().webhookId === m.webhookId) return;
+    if (m.author && m.author.bot && !m.webhookId) return;
+    logEvento('🗑️ mensagem apagada', [
+      `**Conta:** ${fmtUser(m.author && m.author.id)}`,
+      `**Canal:** ${fmtCanal(m.channelId)}`,
+      `**Mensagem:** \`${m.id}\``,
+      `**Conteúdo:**
+${conteudoMsg(m)}`,
+    ], 0x95a5a6);
+  } catch (e) { err(e); }
+});
+
+client.on('messageDeleteBulk', async (msgs, channel) => {
+  try {
+    const guild = channel && channel.guild;
+    if (!guild || !INFERNO_GUILDS.has(guild.id)) return;
+    logEvento('🧹 mensagens apagadas em massa', [`**Canal:** ${fmtCanal(channel.id)}`, `**Quantidade:** ${msgs.size}`], 0x95a5a6);
+  } catch (e) { err(e); }
+});
+
+client.on('messageReactionAdd', async (reaction, user) => {
+  try {
+    if (reaction.partial) reaction = await reaction.fetch().catch(() => reaction);
+    if (!reaction.message || !reaction.message.guild || !INFERNO_GUILDS.has(reaction.message.guild.id) || user.bot) return;
+    logEvento('➕ reação adicionada', [`**Conta:** ${fmtUser(user.id)}`, `**Canal:** ${fmtCanal(reaction.message.channelId)}`, `**Mensagem:** \`${reaction.message.id}\``, `**Emoji:** ${reaction.emoji}`], 0x3498db);
+  } catch (e) { err(e); }
+});
+
+client.on('messageReactionRemove', async (reaction, user) => {
+  try {
+    if (reaction.partial) reaction = await reaction.fetch().catch(() => reaction);
+    if (!reaction.message || !reaction.message.guild || !INFERNO_GUILDS.has(reaction.message.guild.id) || user.bot) return;
+    logEvento('➖ reação removida', [`**Conta:** ${fmtUser(user.id)}`, `**Canal:** ${fmtCanal(reaction.message.channelId)}`, `**Mensagem:** \`${reaction.message.id}\``, `**Emoji:** ${reaction.emoji}`], 0x3498db);
+  } catch (e) { err(e); }
+});
+
+client.on('typingStart', async (t) => {
+  try {
+    if (!t.guild || !INFERNO_GUILDS.has(t.guild.id) || !t.user || t.user.bot) return;
+    // log de digitando e muito barulhento; fica so no console pra nao poluir o webhook
+    log('TYPING', { user: t.user.id, channel: t.channel && t.channel.id });
+  } catch (e) { err(e); }
+});
+
+
 // ---------- estado persistente no repo GitHub (sobrevive a religadas/updates) ----------
-const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'automod_config.json', 'automod_status.json'];
+const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'logs_state.json', 'blacklist_state.json'];
 async function ghStateLoad() {
   const tok = process.env.GITHUB_TOKEN, repo = process.env.GITHUB_REPOSITORY;
   if (!tok || !repo) return;
@@ -431,7 +753,11 @@ client.on('messageCreate', async (m) => {
     }
     return;
   }
-  if (m.author.bot) return;
+  const logsStAtual = lerLogsState();
+  if (m.webhookId && (isOwnWebhookId(m.webhookId) || (logsStAtual.webhookId && m.webhookId === logsStAtual.webhookId))) return; // nao filtrar/logar webhooks do proprio bot
+  // Bots reais continuam ignorados, mas webhook precisa passar pelo filtro:
+  // raid costuma usar webhook e, no Discord, webhook aparece como author.bot.
+  if (m.author.bot && !m.webhookId) return;
   const rec = {
     ts: new Date().toISOString(),
     id: m.id,
@@ -442,7 +768,7 @@ client.on('messageCreate', async (m) => {
     content: m.content,
     attachments: m.attachments.map((a) => ({ name: a.name, url: a.url })),
   };
-  append(INBOX, rec);
+  enviarLogMensagem(m).catch(err);
   if (m.author.id === OWNER_ID) {
     // fala do dono: tag propria pra achar rapido no log
     log('DONO', { channel: m.channelId, where: rec.where, content: m.content });
@@ -520,6 +846,30 @@ client.on('messageCreate', async (m) => {
       log('MENU', { channel: m.channelId });
       return;
     }
+    // .logs on/off/status — liga logs em tempo real neste canal via webhook
+    if (c === '.logs' || c === '.logs status' || c === '.logs on' || c === '.logs off') {
+      await m.delete().catch(() => {});
+      const st = lerLogsState();
+      if (c === '.logs off') {
+        st.on = false;
+        salvarLogsState(st);
+        await whSend(m.channel, 'logs **off**.').catch(() => {});
+        log('LOGS_OFF', { channel: m.channelId });
+        return;
+      }
+      if (c === '.logs on') {
+        st.on = true;
+        st.channelId = m.channelId;
+        const wh = await getLogsWebhook(st).catch((e) => { err(e); return null; });
+        if (wh) st.webhookId = wh.id;
+        salvarLogsState(st);
+        await whSend(m.channel, `logs **on** em <#${m.channelId}>.`).catch(() => {});
+        log('LOGS_ON', { channel: m.channelId, webhookId: st.webhookId });
+        return;
+      }
+      await whSend(m.channel, `logs: **${st.on ? 'on' : 'off'}**${st.channelId ? ` em <#${st.channelId}>` : ''}. use \`.logs on\` ou \`.logs off\`.`).catch(() => {});
+      return;
+    }
     // .cl [qtd] — apaga mensagens de uma vez (dono). sem valor = 10.
     if (c === '.cl' || c.startsWith('.cl ')) {
       const n = parseInt(c.split(/\s+/)[1], 10);
@@ -538,201 +888,6 @@ client.on('messageCreate', async (m) => {
         log('CL', { channel: m.channelId, pedido: total, apagadas: deleted });
       } catch (e) { err(e); }
       return;
-    }
-    // ---------- .automod — automod NATIVO do discord ----------
-    // a regra mora no servidor do discord: a mensagem e barrada antes de aparecer,
-    // sem esperar o bot (segue valendo enquanto o bot reinicia)
-    if (c === '.automod' || c.startsWith('.automod ')) {
-      await m.delete().catch(() => {}); // o comando nao fica no canal
-      const args = m.content.trim().split(/\s+/).slice(1);
-      const sub = (args[0] || '').toLowerCase();
-      const arg = args.slice(1).join(' ');
-      const low = arg.toLowerCase();
-      const cfg = automod.ler();
-      const dizer = (texto) => whSend(m.channel, {
-        flags: 1 << 15,
-        components: [{ type: 17, accent_color: 8912896, components: [{ type: 10, content: String(texto).slice(0, 1900) }] }],
-      }).catch((e) => { err(e); return null; });
-      const sincronizar = async (extra) => {
-        automod.salvar(cfg);
-        let r;
-        try { r = await automod.sincronizar(m.guild, cfg, { forcar: true }); }
-        catch (e) { err(e); r = { erros: [String(e.message || e)] }; }
-        const linhas = [];
-        if (r.criadas && r.criadas.length) linhas.push('criadas/atualizadas: ' + r.criadas.join(', '));
-        if (r.ligadas && r.ligadas.length) linhas.push('religadas: ' + r.ligadas.join(', '));
-        if (r.off && r.off.length) linhas.push('desligadas: ' + r.off.join(', '));
-        if (r.removidas && r.removidas.length) linhas.push('apagadas (regra do bot sem uso): ' + r.removidas.join(', '));
-        if (r.adotadas && r.adotadas.length) linhas.push('achei regra feita na mão e usei ela: ' + r.adotadas.join(', '));
-        if (r.avisos && r.avisos.length) linhas.push('avisos: ' + r.avisos.join(' | '));
-        if (r.erros && r.erros.length) linhas.push('erros: ' + r.erros.join(' | '));
-        if (!linhas.length) linhas.push('tudo ja tava em dia.');
-        log('AUTOMOD_CMD', { sub, guild: m.guild.id, r });
-        return dizer([extra, ...linhas].filter(Boolean).join('\n'));
-      };
-
-      const AJUDA = [
-        '# AutoMod do Discord',
-        'Barra a mensagem **antes** dela aparecer no canal — e vale até com o bot desligado.',
-        '-# quem tem Administrador ou Gerenciar Servidor passa direto (isso é do próprio Discord)',
-        '',
-        '**`.automod`** liga/sincroniza  •  **`.automod status`** o que tá valendo',
-        '**`.automod off`** desliga as regras do bot  •  **`.automod apagar`** apaga elas de vez',
-        '',
-        '**`.automod spam on|off`**',
-        '**`.automod mencoes 5`** limite de marcações por mensagem (ou `off`)',
-        '**`.automod links on|off`**  •  **`.automod link permitir <txt>`**',
-        '**`.automod palavra <txt>`** bloqueia palavra/frase (aceita `*` curinga)',
-        '**`.automod palavra del <txt>`**  •  **`.automod palavras`** lista',
-        '**`.automod regex <padrão>`** até 10 (sem retrovisor tipo \\1)',
-        '**`.automod regex del <n>`**  •  **`.automod regex lista`**',
-        '**`.automod asterisco on|off`** bloqueia quem usa `*` quebrado',
-        '**`.automod compacto on|off`** junta link+palavras+regex numa regra só (cabe em 1 vaga)',
-        '**`.automod timeout 600`** o próprio automod dá timeout (0 = só bloqueia)',
-        '**`.automod castigo 3 10`** 3 bloqueios em 10min = castigo progressivo do bot',
-        '**`.automod alertas #canal`** o Discord posta lá o que bloqueou (ou `off`)',
-        '**`.automod canal #canal`** / **`.automod cargo @cargo`** isenta (ou `limpar`)',
-      ].join('\n');
-
-      try {
-        if (!sub || sub === 'on' || sub === 'ligar' || sub === 'sync') {
-          cfg.on = true;
-          return void await sincronizar('automod **ligado** e sincronizado nesse servidor.');
-        }
-        if (sub === 'off') {
-          cfg.on = false;
-          return void await sincronizar('automod **desligado** (as regras ficam desativadas, nada é apagado).');
-        }
-        if (sub === 'apagar' || sub === 'limpar-tudo') {
-          const r = await automod.apagar(m.guild, cfg);
-          log('AUTOMOD_APAGAR', { guild: m.guild.id, r });
-          return void await dizer([`apaguei ${r.apagadas.length} regra(s): ${r.apagadas.join(', ') || '-'}`, r.restauradas && r.restauradas.length ? `restaurei a regra manual: ${r.restauradas.join(', ')}` : '', r.erros.length ? 'erros: ' + r.erros.join(' | ') : ''].filter(Boolean).join('\n'));
-        }
-        if (sub === 'status') {
-          const regras = await automod.listar(m.guild);
-          const linha = (r) => `${r.on ? '🟢' : '⚫'} \`${r.nome}\` — ${r.gatilho} → ${r.acoes}${r.cargos.length ? ` (${r.cargos.length} cargo(s) imune(s))` : ''}${r.canais.length ? ` (${r.canais.length} canal(is) isento(s))` : ''}`;
-          const minhas = regras.filter((r) => r.nosso);
-          const manuais = regras.filter((r) => !r.nosso);
-          const corpo = [
-            minhas.length ? minhas.map(linha).join('\n') : 'nenhuma regra do bot nesse servidor. manda `.automod` pra criar.',
-            manuais.length ? '\n**feitas na mão no painel do discord** (o bot não mexe):\n' + manuais.map(linha).join('\n') : '',
-          ].filter(Boolean).join('\n');
-          return void await dizer([
-            '# AutoMod',
-            cfg.on ? 'estado no arquivo: **ligado**' : 'estado no arquivo: **desligado**',
-            `modo: **${cfg.compacto !== false ? 'compacto (1 regra)' : 'separado'}** • timeout do automod: **${cfg.timeoutSegundos || 0}s** • castigo: **${cfg.castigo.blocos} bloqueio(s) em ${cfg.castigo.janelaMin}min**`,
-            `palavras: **${cfg.palavras.length}** • regex: **${cfg.regex.length}** • alertas: ${cfg.canalAlertas ? `<#${cfg.canalAlertas}>` : 'off'}`,
-            '',
-            corpo,
-          ].join('\n'));
-        }
-        if (sub === 'ajuda' || sub === 'help' || sub === '?') return void await dizer(AJUDA);
-        if (sub === 'spam') {
-          if (!low) return void await dizer(`spam está **${cfg.spam ? 'ligado' : 'desligado'}**. use \`.automod spam on\` ou \`.automod spam off\`.`);
-          cfg.spam = low === 'on' || low === 'ligar';
-          return void await sincronizar(`spam do discord: **${cfg.spam ? 'ligado' : 'desligado'}**.`);
-        }
-        if (sub === 'mencoes' || sub === 'menções') {
-          if (!low || low === 'on') { cfg.mencoes.on = true; return void await sincronizar(`limite de menções: **${cfg.mencoes.limite}** por mensagem.`); }
-          if (low === 'off') { cfg.mencoes.on = false; return void await sincronizar('limite de menções: **desligado**.'); }
-          const n = parseInt(low, 10);
-          if (isNaN(n)) return void await dizer('usa `.automod mencoes <número>` (1 a 50).');
-          cfg.mencoes.on = true;
-          cfg.mencoes.limite = Math.max(1, Math.min(50, n));
-          return void await sincronizar(`limite de menções: **${cfg.mencoes.limite}** por mensagem.`);
-        }
-        if (sub === 'links' || sub === 'link') {
-          if (sub === 'links') {
-            if (!low) return void await dizer(`links estão **${cfg.links.on ? 'bloqueados' : 'liberados'}**. use \`.automod links on\` ou \`off\`.`);
-            cfg.links.on = low === 'on' || low === 'ligar';
-            return void await sincronizar(`links: **${cfg.links.on ? 'bloqueados' : 'liberados'}**.`);
-          }
-          if (low.startsWith('permitir')) {
-            const txt = arg.replace(/^permitir\s*/i, '').trim();
-            if (!txt) return void await dizer('qual link liberar? `.automod link permitir youtube.com`');
-            if (!cfg.links.permitidos.includes(txt)) cfg.links.permitidos.push(txt);
-            return void await sincronizar(`liberado: **${txt}** (resto continua bloqueado).`);
-          }
-          if (low === 'limpar' || low === 'reset') { cfg.links.permitidos = []; return void await sincronizar('lista de links liberados zerada.'); }
-          return void await dizer('usa `.automod link permitir <texto>` ou `.automod link limpar`.');
-        }
-        if (sub === 'palavra' || sub === 'palavras' || sub === 'bloquear') {
-          const del = /^(del|remover|tirar|apagar)\s+/i.test(arg);
-          const txt = arg.replace(/^(del|remover|tirar|apagar)\s+/i, '').trim();
-          if (sub === 'palavras' && !arg) {
-            const lista = cfg.palavras.length ? cfg.palavras.map((p, i) => `${i + 1}. \`${p}\``).join('\n') : 'lista vazia.';
-            return void await dizer(`# Palavras bloqueadas (${cfg.palavras.length})\n${lista}`);
-          }
-          if (!txt) return void await dizer('manda a palavra/frase: `.automod palavra bom dia` (aceita `*` curinga, ex: `*promo*`).');
-          if (del) {
-            cfg.palavras = cfg.palavras.filter((p) => p.toLowerCase() !== txt.toLowerCase());
-            return void await sincronizar(`removido da lista: \`${txt}\` (${cfg.palavras.length} restantes).`);
-          }
-          if (!cfg.palavras.some((p) => p.toLowerCase() === txt.toLowerCase())) cfg.palavras.push(txt);
-          return void await sincronizar(`bloqueado: \`${txt}\` — agora ninguém consegue nem enviar essa mensagem.`);
-        }
-        if (sub === 'regex') {
-          if (!arg || low === 'lista') {
-            const lista = cfg.regex.length ? cfg.regex.map((p, i) => `${i + 1}. \`${p}\``).join('\n') : 'lista vazia.';
-            return void await dizer(`# Regex (${cfg.regex.length}/10)\n${lista}\n-# regex do discord é a do rust: não tem retrovisor (\\1), lookahead, etc.`);
-          }
-          if (/^(del|remover|tirar|apagar)\s+/i.test(arg)) {
-            const n = parseInt(arg.replace(/^(del|remover|tirar|apagar)\s+/i, ''), 10);
-            if (isNaN(n) || !cfg.regex[n - 1]) return void await dizer('qual número? usa `.automod regex lista` pra ver.');
-            const fora = cfg.regex.splice(n - 1, 1)[0];
-            return void await sincronizar(`regex removida: \`${fora}\``);
-          }
-          if (cfg.regex.length >= 10) return void await dizer('já tem 10 regex (limite do discord). remove uma antes.');
-          cfg.regex.push(arg);
-          return void await sincronizar(`regex adicionada: \`${arg}\``);
-        }
-        if (sub === 'asterisco') {
-          if (!low) return void await dizer(`asterisco está **${cfg.asterisco ? 'bloqueado' : 'liberado'}** (o bot já apaga mensagem com \`*\` na mão).`);
-          cfg.asterisco = low === 'on' || low === 'ligar';
-          return void await sincronizar(`asterisco: **${cfg.asterisco ? 'bloqueado' : 'liberado'}**.`);
-        }
-        if (sub === 'compacto') {
-          if (!low) return void await dizer(`modo compacto está **${cfg.compacto !== false ? 'ligado' : 'desligado'}** (ligado = link+palavras+regex+asterisco numa regra só, ocupa 1 vaga em vez de 4).`);
-          cfg.compacto = low === 'on' || low === 'ligar';
-          return void await sincronizar(`modo compacto: **${cfg.compacto ? 'ligado' : 'desligado'}**.`);
-        }
-        if (sub === 'timeout') {
-          const n = parseInt(low, 10);
-          if (isNaN(n) || n < 0) return void await dizer('usa `.automod timeout <segundos>` (0 = só bloqueia a mensagem). máximo 4 semanas.');
-          cfg.timeoutSegundos = Math.min(2419200, n);
-          return void await sincronizar(`timeout do automod: **${cfg.timeoutSegundos}s** (0 = só bloqueia; só vale pra palavra/regex/menção).`);
-        }
-        if (sub === 'castigo') {
-          const [a1, a2] = low.split(/\s+/);
-          const blocos = parseInt(a1, 10);
-          if (isNaN(blocos)) return void await dizer('usa `.automod castigo <bloqueios> [minutos]` — ex: `.automod castigo 3 10`');
-          cfg.castigo.blocos = Math.max(1, Math.min(50, blocos));
-          if (!isNaN(parseInt(a2, 10))) cfg.castigo.janelaMin = Math.max(1, Math.min(1440, parseInt(a2, 10)));
-          return void await sincronizar(`castigo: **${cfg.castigo.blocos} bloqueio(s) em ${cfg.castigo.janelaMin}min** → timeout progressivo (1h, 2h, 3h...).`);
-        }
-        if (sub === 'alertas' || sub === 'alerta') {
-          if (low === 'off' || low === '0') { cfg.canalAlertas = ''; return void await sincronizar('alertas do automod: **off**.'); }
-          const ch = m.mentions.channels.first() || m.guild.channels.cache.get(arg.replace(/[<#>]/g, ''));
-          if (!ch) return void await dizer('marca o canal: `.automod alertas #mod-log` (ou `off`).');
-          cfg.canalAlertas = ch.id;
-          return void await sincronizar(`o discord vai postar o que bloqueou em <#${ch.id}>.`);
-        }
-        if (sub === 'canal' || sub === 'cargo') {
-          if (low === 'limpar' || low === 'reset' || low === 'off') {
-            if (sub === 'cargo') cfg.cargosImunes = []; else cfg.canaisImunes = [];
-            return void await sincronizar(`imunes: lista de ${sub === 'cargo' ? 'cargos' : 'canais'} zerada.`);
-          }
-          const alvo = sub === 'cargo' ? m.mentions.roles.first() : m.mentions.channels.first();
-          if (!alvo) return void await dizer(`marca o ${sub}: \`.automod ${sub} @cargo\` (ou \`limpar\`).`);
-          const lista = sub === 'cargo' ? cfg.cargosImunes : cfg.canaisImunes;
-          if (!lista.includes(alvo.id)) lista.push(alvo.id);
-          return void await sincronizar(`imune: ${sub === 'cargo' ? `<@&${alvo.id}>` : `<#${alvo.id}>`} passa por cima de todas as regras do bot.`);
-        }
-        return void await dizer('não entendi. manda `.automod ajuda`.' + '\n\n' + AJUDA);
-      } catch (e) {
-        err(e);
-        return void await dizer('.automod falhou: ' + (e.message || e) + '\n-# o bot precisa da permissão **Gerenciar Servidor** pra mexer no automod.');
-      }
     }
     // .att [arquivo] — sobe o arquivo pro repo do GitHub e religa com o codigo novo (só no bot hospedado)
     if (c === '.att' || c.startsWith('.att ')) {
@@ -826,9 +981,7 @@ async function aplicarCastigo(m, motivo) {
   return castigar(m.guild, m.author.id, motivo, { member: m.member, canal: m.channel });
 }
 
-// castigo progressivo (serve pro filtro do bot E pro automod): 1h, 2h, 3h...
-// funciona so com o id do cara — o automod bloqueia a mensagem antes dela chegar,
-// entao o castigo de la nao tem Message nenhuma pra usar
+// castigo progressivo do anti-flood: 1h, 2h, 3h...
 async function castigar(guild, userId, motivo, opts = {}) {
   const st = readJsonSafe(MUTE_STATE, {});
   const rec = st[userId] || { level: 0, until: 0 };
@@ -867,7 +1020,7 @@ async function varrerFlood() {
     for (const ch of [...g.channels.cache.values()]) {
       if (!ch.isTextBased()) continue;
       try {
-        const msgs = (await ch.messages.fetch({ limit: 100 })).filter((x) => !x.author.bot && x.author.id !== OWNER_ID && x.deletable);
+        const msgs = (await ch.messages.fetch({ limit: 100 })).filter((x) => (!x.author.bot || x.webhookId) && !isOwnWebhookId(x.webhookId) && x.author.id !== OWNER_ID && x.deletable);
         const por = {};
         for (const x of [...msgs.values()]) (por[x.author.id] = por[x.author.id] || []).push(x);
         const alvos = new Set();
@@ -899,7 +1052,7 @@ async function varrerLinks() {
       if (!ch.isTextBased()) continue;
       try {
         const msgs = await ch.messages.fetch({ limit: 100 });
-        const alvos = msgs.filter((x) => !x.author.bot && x.author.id !== OWNER_ID && RE_LINK.test(x.content || '') && x.deletable);
+        const alvos = msgs.filter((x) => (!x.author.bot || x.webhookId) && !isOwnWebhookId(x.webhookId) && x.author.id !== OWNER_ID && temLink(x.content || '') && x.deletable);
         if (!alvos.size) continue;
         await ch.bulkDelete(alvos, true).catch(async () => {
           for (const x of [...alvos.values()]) await x.delete().catch(() => {});
@@ -923,7 +1076,7 @@ async function varrerLinks() {
     if (m.content.length > cfg.chars) reasons.push(`chars>${cfg.chars}`);
 
     // 1.5) qualquer link / convite de server morre na hora
-    if (RE_LINK.test(m.content)) reasons.push('link');
+    if (temLink(m.content)) reasons.push('link');
 
     // 1.6) asterisco (markdown quebrado tipo **teste*): apaga na hora, sem castigo
     if ((m.content || '').includes('*')) reasons.push('asterisco');
@@ -938,6 +1091,32 @@ async function varrerLinks() {
       if (bruto.length > 0 && visivel.length === 0) {
         reasons.push('invisivel');
       }
+    }
+
+    // 1.8) repeticao distribuida: varias contas/webhook mandando o mesmo texto.
+    // cobre o caso que passa por baixo dos limites por-usuario
+    // (cada conta manda so 1 mensagem). Nao ativa modo global/canal.
+    {
+      const suspeitaBase = reasons.some((r) => /^(link|header|invisivel|asterisco|chars>)/.test(r));
+      const sig = msgSig(m);
+      if ((suspeitaBase || sig.length >= 80) && sig !== 'vazia') {
+        const k = `${m.guild.id}:${sig.slice(0, 220)}`;
+        const arr = (crossSigBuf.get(k) || []).filter((e) => now - e.ts < 60 * 1000);
+        arr.push({ ts: now, userId: m.author.id });
+        crossSigBuf.set(k, arr);
+        const usuarios = new Set(arr.map((e) => e.userId));
+        if (arr.length >= 3 && (usuarios.size >= 3 || m.webhookId)) reasons.push('raid-repetida');
+      }
+
+      // variação rápida: texto quase igual, mas com pontuação/espaço/invisível
+      // diferente. Quando bater, apaga também as cópias recentes parecidas.
+      if (suspeitaBase || (m.content || '').length >= 80) {
+        const recentes = (recentMsgBuf.get(m.channelId) || []).filter((e) => now - e.ts < CROSS_SIMILAR_MS && e.id !== m.id);
+        const parecidas = recentes.filter((e) => similarTexto(m.content || '', e.content || ''));
+        const usuarios = new Set(parecidas.map((e) => e.userId));
+        if (parecidas.length >= CROSS_SIMILAR_MIN - 1 && (usuarios.size >= 2 || m.webhookId)) reasons.push('raid-parecida');
+      }
+
     }
 
     // 2) mensagem repetida: compara com as 3 últimas do mesmo autor (pega
@@ -1016,59 +1195,73 @@ async function varrerLinks() {
     }
 
     // 6) chuva de link: 10+ links em 10 minutos -> castigo progressivo
-    if (RE_LINK.test(m.content || '')) {
+    if (temLink(m.content || '')) {
       const arr = (linkBuf.get(m.author.id) || []).filter((t) => now - t < 10 * 60 * 1000);
       arr.push(now);
       linkBuf.set(m.author.id, arr);
       if (arr.length > REP_MUTE_QTD) await aplicarCastigo(m, 'mandar link 10+ vezes');
     }
 
-    if (reasons.length && m.deletable) {
-      await m.delete().catch(() => {});
-      log('ANTIFLOOD', { reason: reasons.join('+'), kind: msgKind(m), author: m.author.id, channel: m.channelId, len: m.content.length });
+    const recentes = registrarRecente(m, reasons, now);
+    if (reasons.length) {
+      await apagarRelacionadas(m, recentes, reasons.join('+')).catch(err);
+      const apagou = await m.delete().then(() => true).catch((e) => {
+        log('ANTIFLOOD_DELETE_FAIL', { reason: reasons.join('+'), author: m.author.id, channel: m.channelId, deletable: m.deletable, err: e && e.message });
+        return false;
+      });
+      log('ANTIFLOOD', { reason: reasons.join('+'), kind: msgKind(m), author: m.author.id, channel: m.channelId, len: m.content.length, apagou });
     }
   } catch (e) {
     err(e);
   }
 });
 
-// ---------- automod nativo: o discord conta pro bot o que ele bloqueou ----------
-// mensagem bloqueada NAO vira evento de mensagem (ela nunca chegou a existir no
-// canal), entao esse evento e o unico jeito de saber o que rolou + punir quem insiste
-client.on('autoModerationActionExecution', async (a) => {
-  try {
-    if (!a.guild || !a.userId) return;
-    const regra = (a.autoModerationRule && a.autoModerationRule.name) || String(a.ruleId);
-    const bloqueou = !!(a.action && a.action.type === 1); // 1 = BLOCK_MESSAGE
-    const texto = String(a.content || '');
-    append(INBOX, {
-      ts: new Date().toISOString(),
-      id: null,
-      author: a.user ? a.user.tag : a.userId,
-      authorId: a.userId,
-      where: `automod:${regra}`,
-      channelId: a.channelId || null,
-      content: texto,
-      automod: { regra, gatilho: a.ruleTriggerType, keyword: a.matchedKeyword, bloqueado: bloqueou },
-    });
-    log('AUTOMOD_BLOCK', { regra, autor: a.userId, canal: a.channelId, keyword: a.matchedKeyword, bloqueado: bloqueou, content: texto.slice(0, 120) });
-
-    if (!String(regra).startsWith(automod.PREFIXO)) return; // regra feita a mao no painel: so registra
-    const cfg = automod.ler();
-    const janelaMs = Math.max(1, Number((cfg.castigo && cfg.castigo.janelaMin) || 10)) * 60 * 1000;
-    const minimo = Math.max(1, Number((cfg.castigo && cfg.castigo.blocos) || 3));
-    const now = Date.now();
-    const arr = (automodBlocks.get(a.userId) || []).filter((t) => now - t < janelaMs);
-    arr.push(now);
-    automodBlocks.set(a.userId, arr);
-    if (arr.length >= minimo) {
-      automodBlocks.delete(a.userId);
-      await castigar(a.guild, a.userId, `automod: ${regra}`, { member: a.member, channelId: a.channelId });
-    }
-  } catch (e) { err(e); }
-});
-
 client.on('interactionCreate', async (i) => {
+  // botoes dos logs (so o dono). Os botoes ficam na mensagem do webhook;
+  // as acoes tambem voltam pro webhook de logs. O unico retorno fora disso e
+  // o Copiar msg, porque o Discord nao deixa bot copiar direto pro clipboard.
+  if (i.isButton() && String(i.customId || '').startsWith('log_')) {
+    const [acao, arg] = i.customId.split(':');
+    try {
+      if (i.user.id !== OWNER_ID) {
+        await i.deferUpdate().catch(() => {});
+        return;
+      }
+      if (acao === 'log_copy') {
+        const rec = logMsgCache.get(arg);
+        if (!rec) return void await i.reply({ content: 'essa mensagem saiu da memoria do bot (reiniciou ou ficou antiga).', ephemeral: true }).catch(() => {});
+        const txt = rec.content || '*sem texto*';
+        return void await i.reply({ content: 'copia daqui:\n```\n' + limparCodigo(corta(txt, 1800)) + '\n```', ephemeral: true }).catch(() => {});
+      }
+      await i.deferUpdate().catch(() => {});
+      const userId = arg;
+      if (!i.guild || !/^\d{15,25}$/.test(userId)) return void await enviarLogSistema('botao de log falhou: id invalido.');
+      if (userId === OWNER_ID) return void await enviarLogSistema('botao de log ignorado: nao vou punir o dono.');
+      if (acao === 'log_ban') {
+        await i.guild.members.ban(userId, { reason: `banido pelo botão de log por ${i.user.tag}` });
+        await enviarLogSistema(`🔨 <@${userId}> foi banido pelo botão do log.`);
+        log('LOG_BAN', { userId, by: i.user.id });
+        return;
+      }
+      if (acao === 'log_bl') {
+        blacklistAdd(userId, { tag: userId, motivo: `blacklist pelo botão de log por ${i.user.tag}`, by: i.user.id, criadoEm: new Date().toISOString() });
+        await i.guild.members.ban(userId, { reason: `blacklist pelo botão de log por ${i.user.tag}` }).catch((e) => log('BLACKLIST_BAN_FAIL', { userId, err: e && e.message }));
+        await enviarLogSistema(`⛔ <@${userId}> foi colocado na blacklist e banido pelo botão do log.`);
+        log('BLACKLIST_ADD', { userId, by: i.user.id });
+        return;
+      }
+      if (acao === 'log_unbl') {
+        const tinha = blacklistDel(userId);
+        await enviarLogSistema(tinha ? `✅ <@${userId}> foi removido da blacklist pelo botão do log.` : `ℹ️ <@${userId}> não estava na blacklist.`);
+        log('BLACKLIST_DEL', { userId, by: i.user.id, tinha });
+        return;
+      }
+    } catch (e) {
+      err(e);
+      await enviarLogSistema('botao de log falhou: ' + (e.message || e)).catch(() => {});
+      return;
+    }
+  }
   // botoes do painel .fig (so o dono)
   if (i.isButton() && (i.customId === 'fig_done' || i.customId === 'fig_cancel')) {
     await i.deferUpdate().catch(() => {});

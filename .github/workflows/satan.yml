@@ -6,8 +6,8 @@ on:
       - 'nuke_state.json'
       - 'bump_state.json'
       - 'mute_state.json'
-      - 'automod_config.json'
-      - 'automod_status.json'
+      - 'logs_state.json'
+      - 'blacklist_state.json'
   schedule:
     - cron: '5 */6 * * *'
 concurrency:
