@@ -6,15 +6,19 @@ on:
       - 'nuke_state.json'
       - 'bump_state.json'
       - 'mute_state.json'
+      - 'nuke_log.json'
       - 'logs_state.json'
       - 'blacklist_state.json'
+  # redeploy de seguranca a cada 5h (o job tem teto de 6h): nunca cai em cima da
+  # hora do teto, e o codigo que sobe e SEMPRE o do main — versao antiga nao volta
   schedule:
-    - cron: '5 */6 * * *'
+    - cron: '5 */5 * * *'
 concurrency:
   group: satan
   cancel-in-progress: true
 permissions:
   contents: write
+  actions: write # o proprio bot dispara um run novo antes do teto de 6h (fica infinito)
 jobs:
   bot:
     runs-on: ubuntu-latest
@@ -27,11 +31,28 @@ jobs:
       - name: bot (loop infinito; .att reinicia com o codigo novo)
         run: |
           while true; do
-            npm i --no-audit --no-fund
-            node bot.js
+            npm i --no-audit --no-fund || true
+            node bot.js || true
             echo "[loop] bot saiu, religando em 2s..."
             sleep 2
           done
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+      # se o job for morto pelo teto de 6h (ou der problema no runner), dispara
+      # outro run na hora em vez de esperar o proximo cron: os logs nao ficam horas mudos
+      - name: religa se o job foi morto pelo tempo
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set +e
+          ANOT=$(gh api "repos/$REPO/check-runs/$RUN_ID/annotations" 2>/dev/null)
+          echo "anotações do job: $(echo "$ANOT" | head -c 500)"
+          if echo "$ANOT" | grep -qi 'timed out\|operation was canceled'; then
+            echo "[restart] job morreu pelo tempo -> disparando novo run"
+            gh workflow run satan.yml --ref main || true
+          fi

@@ -214,6 +214,16 @@ function menuMsg() {
               '**`.fig`**',
             ].join('\n'),
           },
+          { type: 14, spacing: 2, divider: true },
+          {
+            type: 10,
+            content: [
+              '-# **manutencao**',
+              '**`.logs`** estado dos logs  •  **`.logs teste`** confere se ta vivo',
+              '',
+              '**`.att <arquivo>`** sobe pro repo e religa com o codigo novo',
+            ].join('\n'),
+          },
         ],
       },
     ],
@@ -379,19 +389,88 @@ function enfileirarLog(payload) {
   logQueue.push(payload);
   drenarLogs().catch(err);
 }
+const LOG_QUEUE_MAX = 400; // se o canal sumir, segura no maximo isso (descarta o mais antigo)
+let logFalhaSeguida = 0;
 async function drenarLogs() {
   if (logSending) return;
   logSending = true;
   try {
     while (logQueue.length) {
-      const payload = logQueue.shift();
       const wh = await getLogsWebhook().catch(() => null);
-      if (!wh) { logQueue.length = 0; break; }
-      await wh.send(payload).catch((e) => log('LOG_SEND_FAIL', { err: e && e.message }));
-      await esperar(250);
+      // sem webhook (canal apagado, webhook deletado, sem permissao): NAO joga a fila fora.
+      // guarda tudo e espera o vigia dos logs consertar — antes o bot perdia os logs pra sempre aqui.
+      if (!wh) {
+        logFalhaSeguida++;
+        if (logFalhaSeguida === 1 || logFalhaSeguida % 40 === 0) {
+          log('LOG_FILA_PARADA', { naFila: logQueue.length, tentativas: logFalhaSeguida });
+        }
+        while (logQueue.length > LOG_QUEUE_MAX) logQueue.shift();
+        await esperar(10000);
+        continue;
+      }
+      const payload = logQueue.shift();
+      try {
+        await wh.send(payload);
+        logFalhaSeguida = 0;
+        await esperar(250);
+      } catch (e) {
+        const st = e && (e.status || (e.httpStatus !== undefined ? e.httpStatus : e.code));
+        const ms = (e && e.retryAfter) || (e && e.retry_after) || 0;
+        logFalhaSeguida++;
+        // 429/rate limit ou falha passageira: devolve o payload na frente da fila e tenta de novo
+        logQueue.unshift(payload);
+        while (logQueue.length > LOG_QUEUE_MAX) logQueue.pop();
+        const pausa = st === 429 || st === 500 || st === 502 || st === 503 || st === 504
+          ? Math.min(30000, Math.max(ms ? ms * 1000 : 0, 1500 * Math.min(logFalhaSeguida, 8)))
+          : 5000;
+        log('LOG_SEND_FAIL', { err: e && e.message, status: st || null, fila: logQueue.length, pausaMs: pausa });
+        await esperar(pausa);
+      }
     }
   } finally { logSending = false; }
 }
+
+// ---------- vigia dos logs: o canal/webhook nao pode matar os logs de vez ----------
+// manda DM pro dono (o canal de logs pode ser justamente o que morreu)
+async function avisarDono(texto) {
+  try {
+    const u = await client.users.fetch(OWNER_ID);
+    await u.send(texto);
+    log('AVISO_DONO', { texto: String(texto).slice(0, 120) });
+  } catch (e) { log('AVISO_DONO_FAIL', { err: e && e.message }); }
+}
+let logsAvisoDonoEm = 0;
+async function vigiarLogs() {
+  const st = lerLogsState();
+  if (!st.on) return;
+  if (!st.channelId) { // ligado mas sem canal: espera o dono mandar .logs on em algum canal
+    log('LOGS_SEM_CANAL', { dica: 'manda .logs on no canal que voce quer os logs' });
+    return;
+  }
+  const ch = await client.channels.fetch(st.channelId).catch(() => null);
+  if (!ch || !ch.isTextBased()) {
+    // canal morreu (levado pelo nuke ou apagado na mao): limpa o cache e avisa o dono 1x a cada 30min
+    if (st.webhookId) logWhCache.delete(st.webhookId);
+    if (Date.now() - logsAvisoDonoEm > 30 * 60 * 1000) {
+      logsAvisoDonoEm = Date.now();
+      avisarDono(`⚠️ os **logs** estão ligados mas o canal <#${st.channelId}> sumiu (apagado ou levado pelo nuke). Manda \`.logs on\` no canal novo pra religar.`).catch(() => {});
+    }
+    log('LOGS_CANAL_MORTO', { channelId: st.channelId });
+    return;
+  }
+  const wh = await getLogsWebhook(st).catch((e) => { log('LOGS_WEBHOOK_FAIL', { err: e && e.message }); return null; });
+  if (!wh) {
+    // webhook foi apagado: esquece o id velho e recria na proxima tentativa
+    logWhCache.delete(st.webhookId);
+    st.webhookId = '';
+    salvarLogsState(st);
+    log('LOGS_WEBHOOK_RECRIAR', { channelId: st.channelId });
+    return;
+  }
+  if (logFalhaSeguida) log('LOGS_OK', { fila: logQueue.length, webhook: wh.id });
+  logFalhaSeguida = 0;
+}
+setInterval(() => { vigiarLogs().catch(err); }, 5 * 60 * 1000);
 function cardLogSimples(titulo, linhas, cor = 8912896) {
   const txt = [titulo ? `### ${titulo}` : '', ...linhas].filter(Boolean).join('\n');
   return {
@@ -509,6 +588,10 @@ client.once('ready', async () => {
       await editarPainelNuke(stN);
     }
   })().catch(err);
+  // logs: confere o canal/webhook ja no boot e deixa escrito no log do runner se estao vivos
+  const logsBoot = lerLogsState();
+  log('LOGS_BOOT', { on: !!logsBoot.on, channelId: logsBoot.channelId || null, webhookId: logsBoot.webhookId || null });
+  vigiarLogs().catch(err);
   // slash commands removidos a pedido do dono (nao registrar mais)
 });
 
@@ -847,27 +930,47 @@ client.on('messageCreate', async (m) => {
       return;
     }
     // .logs on/off/status — liga logs em tempo real neste canal via webhook
-    if (c === '.logs' || c === '.logs status' || c === '.logs on' || c === '.logs off') {
+    if (c === '.logs' || c.startsWith('.logs')) {
       await m.delete().catch(() => {});
+      const sub = (m.content.trim().split(/\s+/)[1] || '').toLowerCase();
       const st = lerLogsState();
-      if (c === '.logs off') {
+      if (sub === 'off' || sub === 'desligar') {
         st.on = false;
         salvarLogsState(st);
-        await whSend(m.channel, 'logs **off**.').catch(() => {});
+        await whSend(m.channel, 'logs **off**. nada é postado no canal de logs (o estado fica salvo, `.logs on` religa).').catch(() => {});
         log('LOGS_OFF', { channel: m.channelId });
         return;
       }
-      if (c === '.logs on') {
+      if (sub === 'on' || sub === 'ligar' || sub === 'canal' || sub === 'aqui' || sub === 'rebind') {
         st.on = true;
         st.channelId = m.channelId;
+        if (st.webhookId) logWhCache.delete(st.webhookId); // troca de canal: webhook novo
+        st.webhookId = '';
         const wh = await getLogsWebhook(st).catch((e) => { err(e); return null; });
         if (wh) st.webhookId = wh.id;
         salvarLogsState(st);
-        await whSend(m.channel, `logs **on** em <#${m.channelId}>.`).catch(() => {});
-        log('LOGS_ON', { channel: m.channelId, webhookId: st.webhookId });
+        if (wh) {
+          await whSend(m.channel, `logs **on** em <#${m.channelId}> — tudo que acontecer aqui dentro vai sair em tempo real por esse canal, e continua ligado depois de reiniciar.`).catch(() => {});
+          await enviarLogSistema(`✅ logs ligados neste canal por <@${m.author.id}>.`).catch(() => {});
+          vigiarLogs().catch(() => {});
+        } else {
+          await whSend(m.channel, 'não consegui criar o webhook de logs aqui — me dá **Gerenciar Webhooks** nesse canal e manda `.logs on` de novo.').catch(() => {});
+        }
+        log('LOGS_ON', { channel: m.channelId, webhookId: st.webhookId, webhook: !!wh });
         return;
       }
-      await whSend(m.channel, `logs: **${st.on ? 'on' : 'off'}**${st.channelId ? ` em <#${st.channelId}>` : ''}. use \`.logs on\` ou \`.logs off\`.`).catch(() => {});
+      if (sub === 'teste') {
+        await enviarLogSistema(`🧪 teste de logs pedido por <@${m.author.id}> — se você leu isso no canal de logs, tá tudo vivo.`).catch(() => {});
+        await whSend(m.channel, st.channelId ? `mandei um teste em <#${st.channelId}>.` : 'os logs estão ligados **sem canal**: manda `.logs on` no canal que você quer.').catch(() => {});
+        return;
+      }
+      const onde = st.channelId ? ` em <#${st.channelId}>` : ' **sem canal** (manda `.logs on` no canal que você quer)';
+      await whSend(m.channel, [
+        `logs: **${st.on ? 'on' : 'off'}**${st.on ? onde : ''}`,
+        st.webhookId ? `-# webhook \`${st.webhookId}\` • fila ${logQueue.length} • vigia a cada 5min (recria o webhook se apagarem)` : '-# sem webhook ainda',
+        '',
+        '**`.logs on`** liga neste canal  •  **`.logs off`** desliga  •  **`.logs teste`** confere se tá vivo',
+      ].join('\n')).catch(() => {});
       return;
     }
     // .cl [qtd] — apaga mensagens de uma vez (dono). sem valor = 10.
@@ -977,91 +1080,6 @@ client.on('messageCreate', async (m) => {
     }
   }
 
-async function aplicarCastigo(m, motivo) {
-  return castigar(m.guild, m.author.id, motivo, { member: m.member, canal: m.channel });
-}
-
-// castigo progressivo do anti-flood: 1h, 2h, 3h...
-async function castigar(guild, userId, motivo, opts = {}) {
-  const st = readJsonSafe(MUTE_STATE, {});
-  const rec = st[userId] || { level: 0, until: 0 };
-  if (Date.now() < rec.until) return null; // ja esta de castigo agora
-  rec.level += 1;
-  const horas = rec.level;
-  rec.until = Date.now() + horas * MUTE_BASE_MS;
-  st[userId] = rec;
-  fs.writeFileSync(MUTE_STATE, JSON.stringify(st, null, 2));
-  repStreak.delete(userId);
-  linkBuf.delete(userId);
-  const membro = opts.member || (guild ? await guild.members.fetch(userId).catch(() => null) : null);
-  const aviso = `Você tomou castigo de ${horas} hora${horas > 1 ? 's' : ''}. Caso continue floodando, o tempo aumentará pra ${horas + 1} horas e assim consecutivamente.`;
-  try {
-    if (membro) await membro.timeout(horas * MUTE_BASE_MS, 'flood: ' + motivo);
-    log('CASTIGO', { author: userId, horas, motivo });
-  } catch (e) { err(e); }
-  // aviso so pra pessoa: o Discord nao deixa mensagem invisivel solta, entao vai por DM (privada)
-  const alvo = membro || await client.users.fetch(userId).catch(() => null);
-  const dmOk = alvo ? await alvo.send(aviso).then(() => true).catch(() => false) : false;
-  if (!dmOk) {
-    const ch = opts.canal || (opts.channelId && guild ? await guild.channels.fetch(opts.channelId).catch(() => null) : null);
-    if (ch) {
-      const tmp = await whSend(ch, `<@${userId}> ${aviso}`).catch(() => null);
-      if (tmp) setTimeout(() => tmp.delete().catch(() => {}), 15000);
-    }
-  }
-  return { horas, aviso };
-}
-
-// varre os canais ao ligar: apaga sobra de flood/repetida/invisivel que passou durante o gap do restart
-async function varrerFlood() {
-  for (const gid of INFERNO_GUILDS) {
-    const g = client.guilds.cache.get(gid);
-    if (!g) continue;
-    for (const ch of [...g.channels.cache.values()]) {
-      if (!ch.isTextBased()) continue;
-      try {
-        const msgs = (await ch.messages.fetch({ limit: 100 })).filter((x) => (!x.author.bot || x.webhookId) && !isOwnWebhookId(x.webhookId) && x.author.id !== OWNER_ID && x.deletable);
-        const por = {};
-        for (const x of [...msgs.values()]) (por[x.author.id] = por[x.author.id] || []).push(x);
-        const alvos = new Set();
-        for (const arr of Object.values(por)) {
-          arr.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-          for (let i = 1; i < arr.length; i++) {
-            if (msgSig(arr[i]) === msgSig(arr[i - 1]) && arr[i].createdTimestamp - arr[i - 1].createdTimestamp < 30000) alvos.add(arr[i]);
-          }
-          const curtas = arr.filter((x) => { const v = (x.content || '').trim(); return v.length > 0 && v.length <= 3; });
-          for (let i = 5; i < curtas.length; i++) {
-            if (curtas[i].createdTimestamp - curtas[i - 5].createdTimestamp < 60000) curtas.slice(i - 5, i + 1).forEach((x) => alvos.add(x));
-          }
-          for (const x of arr) { const v = x.content || ''; if (v && !v.replace(RE_INV, '')) alvos.add(x); }
-          for (const x of arr) { if ((x.content || '').includes('*')) alvos.add(x); }
-        }
-        for (const x of alvos) await x.delete().catch(() => {});
-        if (alvos.size) log('VARREDURA_FLOOD', { canal: ch.id, apagadas: alvos.size });
-      } catch (e) { /* sem permissao, segue */ }
-    }
-  }
-}
-
-// varre os canais ao ligar: apaga link que passou enquanto o bot reiniciava
-async function varrerLinks() {
-  for (const gid of INFERNO_GUILDS) {
-    const g = client.guilds.cache.get(gid);
-    if (!g) continue;
-    for (const ch of [...g.channels.cache.values()]) {
-      if (!ch.isTextBased()) continue;
-      try {
-        const msgs = await ch.messages.fetch({ limit: 100 });
-        const alvos = msgs.filter((x) => (!x.author.bot || x.webhookId) && !isOwnWebhookId(x.webhookId) && x.author.id !== OWNER_ID && temLink(x.content || '') && x.deletable);
-        if (!alvos.size) continue;
-        await ch.bulkDelete(alvos, true).catch(async () => {
-          for (const x of [...alvos.values()]) await x.delete().catch(() => {});
-        });
-        log('VARREDURA', { canal: ch.id, apagadas: alvos.size });
-      } catch (e) { /* sem permissao no canal, segue */ }
-    }
-  }
-}
 
   // ---------- anti-flood: apaga na hora, sem esperar o flood terminar ----------
   // TODA mensagem conta pro flood, independente de qual regra ja pegou ela
@@ -1215,6 +1233,94 @@ async function varrerLinks() {
     err(e);
   }
 });
+
+// ---------- essas 4 viviam presas DENTRO do messageCreate: por isso o ready nao achava varrerLinks ----------
+async function aplicarCastigo(m, motivo) {
+  return castigar(m.guild, m.author.id, motivo, { member: m.member, canal: m.channel });
+}
+
+// castigo progressivo do anti-flood: 1h, 2h, 3h...
+async function castigar(guild, userId, motivo, opts = {}) {
+  const st = readJsonSafe(MUTE_STATE, {});
+  const rec = st[userId] || { level: 0, until: 0 };
+  if (Date.now() < rec.until) return null; // ja esta de castigo agora
+  rec.level += 1;
+  const horas = rec.level;
+  rec.until = Date.now() + horas * MUTE_BASE_MS;
+  st[userId] = rec;
+  fs.writeFileSync(MUTE_STATE, JSON.stringify(st, null, 2));
+  repStreak.delete(userId);
+  linkBuf.delete(userId);
+  const membro = opts.member || (guild ? await guild.members.fetch(userId).catch(() => null) : null);
+  const aviso = `Você tomou castigo de ${horas} hora${horas > 1 ? 's' : ''}. Caso continue floodando, o tempo aumentará pra ${horas + 1} horas e assim consecutivamente.`;
+  try {
+    if (membro) await membro.timeout(horas * MUTE_BASE_MS, 'flood: ' + motivo);
+    log('CASTIGO', { author: userId, horas, motivo });
+  } catch (e) { err(e); }
+  // aviso so pra pessoa: o Discord nao deixa mensagem invisivel solta, entao vai por DM (privada)
+  const alvo = membro || await client.users.fetch(userId).catch(() => null);
+  const dmOk = alvo ? await alvo.send(aviso).then(() => true).catch(() => false) : false;
+  if (!dmOk) {
+    const ch = opts.canal || (opts.channelId && guild ? await guild.channels.fetch(opts.channelId).catch(() => null) : null);
+    if (ch) {
+      const tmp = await whSend(ch, `<@${userId}> ${aviso}`).catch(() => null);
+      if (tmp) setTimeout(() => tmp.delete().catch(() => {}), 15000);
+    }
+  }
+  return { horas, aviso };
+}
+
+// varre os canais ao ligar: apaga sobra de flood/repetida/invisivel que passou durante o gap do restart
+async function varrerFlood() {
+  for (const gid of INFERNO_GUILDS) {
+    const g = client.guilds.cache.get(gid);
+    if (!g) continue;
+    for (const ch of [...g.channels.cache.values()]) {
+      if (!ch.isTextBased()) continue;
+      try {
+        const msgs = (await ch.messages.fetch({ limit: 100 })).filter((x) => (!x.author.bot || x.webhookId) && !isOwnWebhookId(x.webhookId) && x.author.id !== OWNER_ID && x.deletable);
+        const por = {};
+        for (const x of [...msgs.values()]) (por[x.author.id] = por[x.author.id] || []).push(x);
+        const alvos = new Set();
+        for (const arr of Object.values(por)) {
+          arr.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+          for (let i = 1; i < arr.length; i++) {
+            if (msgSig(arr[i]) === msgSig(arr[i - 1]) && arr[i].createdTimestamp - arr[i - 1].createdTimestamp < 30000) alvos.add(arr[i]);
+          }
+          const curtas = arr.filter((x) => { const v = (x.content || '').trim(); return v.length > 0 && v.length <= 3; });
+          for (let i = 5; i < curtas.length; i++) {
+            if (curtas[i].createdTimestamp - curtas[i - 5].createdTimestamp < 60000) curtas.slice(i - 5, i + 1).forEach((x) => alvos.add(x));
+          }
+          for (const x of arr) { const v = x.content || ''; if (v && !v.replace(RE_INV, '')) alvos.add(x); }
+          for (const x of arr) { if ((x.content || '').includes('*')) alvos.add(x); }
+        }
+        for (const x of alvos) await x.delete().catch(() => {});
+        if (alvos.size) log('VARREDURA_FLOOD', { canal: ch.id, apagadas: alvos.size });
+      } catch (e) { /* sem permissao, segue */ }
+    }
+  }
+}
+
+// varre os canais ao ligar: apaga link que passou enquanto o bot reiniciava
+async function varrerLinks() {
+  for (const gid of INFERNO_GUILDS) {
+    const g = client.guilds.cache.get(gid);
+    if (!g) continue;
+    for (const ch of [...g.channels.cache.values()]) {
+      if (!ch.isTextBased()) continue;
+      try {
+        const msgs = await ch.messages.fetch({ limit: 100 });
+        const alvos = msgs.filter((x) => (!x.author.bot || x.webhookId) && !isOwnWebhookId(x.webhookId) && x.author.id !== OWNER_ID && temLink(x.content || '') && x.deletable);
+        if (!alvos.size) continue;
+        await ch.bulkDelete(alvos, true).catch(async () => {
+          for (const x of [...alvos.values()]) await x.delete().catch(() => {});
+        });
+        log('VARREDURA', { canal: ch.id, apagadas: alvos.size });
+      } catch (e) { /* sem permissao no canal, segue */ }
+    }
+  }
+}
+
 
 client.on('interactionCreate', async (i) => {
   // botoes dos logs (so o dono). Os botoes ficam na mensagem do webhook;
@@ -1573,6 +1679,67 @@ async function bumpTick() {
 setInterval(nukeTick, 60 * 1000);
 setInterval(() => { editarPainelNuke(readJsonSafe(NUKE_STATE, {})).catch(() => {}); }, 5 * 1000); // relogio vivo do painel (5s)
 setInterval(bumpTick, 60 * 1000);
+
+// ---------- bot imortal no GitHub Actions ----------
+// o runner tem teto de 6h por job: quando dava o teto, o bot morria e so o cron
+// (a cada 6h) religava — as vezes com o codigo velho do main. aqui o proprio bot
+// dispara um run novo ANTES do teto: o concurrency cancela este job e o loop do
+// workflow liga de novo com o codigo do repo. sem buraco de horas, sem versao antiga.
+const RUN_ID = process.env.GITHUB_RUN_ID;
+const GH_REPO = process.env.GITHUB_REPOSITORY;
+const GH_TOK = process.env.GITHUB_TOKEN;
+const JOB_TETO_MS = 360 * 60 * 1000;      // timeout-minutes: 360 do workflow
+const JOB_FOLGA_MS = 10 * 60 * 1000;      // religa 10min antes do teto
+let jobComecouEm = Date.now();
+let relogado = false;
+async function iniciarRunSatan(motivo) {
+  const r = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/workflows/satan.yml/dispatches`, {
+    method: 'POST',
+    headers: {
+      Authorization: `token ${GH_TOK}`,
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'satan-bot',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ ref: 'main' }),
+  });
+  if (!r.ok && r.status !== 204) throw new Error('dispatch ' + r.status + ' ' + (await r.text()).slice(0, 160));
+  log('RUN_NOVO', { motivo });
+  return true;
+}
+async function descobrirInicioDoJob() {
+  // process.uptime() conta so o node; o npm i antes ja comeu uns minutos do job
+  try {
+    const r = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/runs/${RUN_ID}/jobs?per_page=30`, {
+      headers: { Authorization: `token ${GH_TOK}`, Accept: 'application/vnd.github+json', 'User-Agent': 'satan-bot' },
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const meu = (j.jobs || []).find((x) => x.status === 'in_progress') || (j.jobs || [])[0];
+    return meu && meu.started_at ? new Date(meu.started_at).getTime() : null;
+  } catch { return null; }
+}
+async function tickImortal() {
+  if (relogado || !GH_TOK || !GH_REPO || !RUN_ID) return; // fora do GitHub Actions: nao faz nada
+  const inicio = await descobrirInicioDoJob().catch(() => null);
+  if (inicio) jobComecouEm = inicio;
+  const falta = jobComecouEm + JOB_TETO_MS - JOB_FOLGA_MS - Date.now();
+  if (falta > 0) return;
+  if (Date.now() - jobComecouEm < 30 * 60 * 1000) {
+    // relogio errado (job comecou agora): nao dispara, senao vira laco de restart
+    log('IMORTAL_IGNORADO', { motivo: 'job novo demais', uptimeMin: Math.round((Date.now() - jobComecouEm) / 60000) });
+    return;
+  }
+  relogado = true;
+  try {
+    await iniciarRunSatan('teto de 6h do runner: religando antes de morrer');
+    log('IMORTAL', { acao: 'run novo disparado, este job vai ser cancelado em segundos' });
+  } catch (e) {
+    relogado = false; // tenta de novo no proximo tick
+    log('IMORTAL_FAIL', { err: e && e.message });
+  }
+}
+setInterval(() => { tickImortal().catch(err); }, 60 * 1000);
 
 client.login(TOKEN).catch((e) => {
   err(e);
