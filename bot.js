@@ -636,6 +636,10 @@ const client = new Client({
 
 client.once('ready', async () => {
   log('READY', { user: client.user.tag, id: client.user.id, guilds: client.guilds.cache.size });
+  // troca de guarda: este bot ja esta online, agora sim derruba o run antigo do Actions.
+  // (antes o antigo era cancelado ANTES do novo subir: 1-2min offline a cada redeploy,
+  //  e era nesse buraco que spam passava e o .nuke now nao respondia)
+  cancelarRunsAntigos().catch(err);
   client.user.setActivity('o sofrimento dos condenados', { type: 3 });
   if (typeof varrerLinks === 'function') varrerLinks().catch(err); else err(new Error('varrerLinks ausente no ready'));
   if (typeof varrerFlood === 'function') varrerFlood().catch(err); else err(new Error('varrerFlood ausente no ready'));
@@ -1762,8 +1766,8 @@ setInterval(bumpTick, 60 * 1000);
 // ---------- bot imortal no GitHub Actions ----------
 // o runner tem teto de 6h por job: quando dava o teto, o bot morria e so o cron
 // (a cada 6h) religava — as vezes com o codigo velho do main. aqui o proprio bot
-// dispara um run novo ANTES do teto: o concurrency cancela este job e o loop do
-// workflow liga de novo com o codigo do repo. sem buraco de horas, sem versao antiga.
+// dispara um run novo ANTES do teto; quando o novo ficar READY ele cancela este
+// (troca de guarda: nunca fica offline). sem buraco de horas, sem versao antiga.
 const RUN_ID = process.env.GITHUB_RUN_ID;
 const GH_REPO = process.env.GITHUB_REPOSITORY;
 const GH_TOK = process.env.GITHUB_TOKEN;
@@ -1785,6 +1789,19 @@ async function iniciarRunSatan(motivo) {
   if (!r.ok && r.status !== 204) throw new Error('dispatch ' + r.status + ' ' + (await r.text()).slice(0, 160));
   log('RUN_NOVO', { motivo });
   return true;
+}
+async function cancelarRunsAntigos() {
+  if (!GH_TOK || !GH_REPO || !RUN_ID) return;
+  const H = { Authorization: `token ${GH_TOK}`, Accept: 'application/vnd.github+json', 'User-Agent': 'satan-bot' };
+  const r = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/workflows/satan.yml/runs?per_page=20&status=in_progress`, { headers: H });
+  if (!r.ok) throw new Error('lista runs ' + r.status);
+  const j = await r.json();
+  const meu = Number(RUN_ID);
+  const antigos = (j.workflow_runs || []).filter((x) => Number(x.id) < meu);
+  for (const x of antigos) {
+    const c = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/runs/${x.id}/cancel`, { method: 'POST', headers: H }).catch(() => null);
+    log('TROCA_DE_GUARDA', { runAntigo: x.id, runNovo: meu, ok: !!(c && (c.ok || c.status === 202)) });
+  }
 }
 async function descobrirInicioDoJob() {
   // process.uptime() conta so o node; o npm i antes ja comeu uns minutos do job

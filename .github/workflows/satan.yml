@@ -13,12 +13,13 @@ on:
   # hora do teto, e o codigo que sobe e SEMPRE o do main — versao antiga nao volta
   schedule:
     - cron: '5 */5 * * *'
-concurrency:
-  group: satan
-  cancel-in-progress: true
+# SEM concurrency/cancel-in-progress de proposito: o run novo sobe EM PARALELO e,
+# so quando o bot novo estiver online (READY), ele mesmo cancela o run antigo.
+# Antes o antigo morria primeiro e o bot ficava 1-2min offline a cada redeploy —
+# era nesse buraco que spam passava sem ser apagado.
 permissions:
   contents: write
-  actions: write # o proprio bot dispara um run novo antes do teto de 6h (fica infinito)
+  actions: write # o bot novo cancela o run antigo (troca de guarda) e dispara run novo antes do teto de 6h
 jobs:
   bot:
     runs-on: ubuntu-latest
@@ -40,8 +41,9 @@ jobs:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
-      # se o job for morto pelo teto de 6h (ou der problema no runner), dispara
-      # outro run na hora em vez de esperar o proximo cron: os logs nao ficam horas mudos
+      # se o job for morto pelo teto de 6h (ou der problema no runner) e NAO houver
+      # outro run vivo, dispara outro na hora em vez de esperar o proximo cron.
+      # (cancelado pela troca de guarda = normal, tem outro bot online: nao religa)
       - name: religa se o job foi morto pelo tempo
         if: ${{ always() }}
         env:
@@ -50,9 +52,12 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           set +e
-          ANOT=$(gh api "repos/$REPO/check-runs/$RUN_ID/annotations" 2>/dev/null)
-          echo "anotações do job: $(echo "$ANOT" | head -c 500)"
-          if echo "$ANOT" | grep -qi 'timed out\|operation was canceled'; then
-            echo "[restart] job morreu pelo tempo -> disparando novo run"
-            gh workflow run satan.yml --ref main || true
+          VIVOS=$(gh api "repos/$REPO/actions/workflows/satan.yml/runs?status=in_progress&per_page=20" --jq "[.workflow_runs[] | select(.id != $RUN_ID)] | length" 2>/dev/null)
+          FILA=$(gh api "repos/$REPO/actions/workflows/satan.yml/runs?status=queued&per_page=20" --jq ".workflow_runs | length" 2>/dev/null)
+          echo "outros runs vivos: ${VIVOS:-?} | na fila: ${FILA:-?}"
+          if [ "${VIVOS:-0}" -gt 0 ] || [ "${FILA:-0}" -gt 0 ]; then
+            echo "[restart] ja tem outro bot online/subindo -> nao religa"
+            exit 0
           fi
+          echo "[restart] nenhum outro run vivo -> disparando novo run"
+          gh workflow run satan.yml --ref main || true
