@@ -2,6 +2,7 @@ name: satan
 on:
   workflow_dispatch:
   push:
+    branches: [main] # so o main sobe bot: branch de trabalho nao pode ligar um segundo bot
     paths-ignore:
       - 'nuke_state.json'
       - 'bump_state.json'
