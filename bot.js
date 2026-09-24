@@ -22,7 +22,71 @@ const ERRORS = path.join(ROOT, 'errors.log');
 // anti-flood (ajustavel via antispam_config.json)
 const ANTIFLOOD_CFG = path.join(ROOT, 'antispam_config.json');
 const RE_INV = /[\s\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2800\u3164\ufeff\ufe00-\ufe0f\ufff0-\ufff8\ufffe\uffff\u{e0000}-\u{e007f}]/gu;
-const ANTIFLOOD_DEFAULT = { chars: 500, windowMs: 6000, max: 5, penaltyMs: 10000, repeatWindowMs: 30000 };
+const ANTIFLOOD_DEFAULT = { chars: 300, windowMs: 6000, max: 5, penaltyMs: 10000, repeatWindowMs: 30000 };
+// repeticao DENTRO da mesma mensagem: qualquer palavra/emoji que apareca mais de
+// REP_INTERNA_MAX vezes derruba a mensagem (nigga\nnigga\nnigga..., oi oi oi oi, 😂😂😂😂).
+// unica coisa liberada e risada de k (kkkk, k k k k, kk kk kk kk). Letra repetida
+// dentro de uma palavra (naaaao, simmmm) nao conta: o alvo e PALAVRA repetida.
+const REP_INTERNA_MAX = 3;
+const RE_RISADA_K = /^k+$/;
+// palavrinha de ligacao: so conta se dominar a mensagem (evita apagar frase
+// normal tipo "o gato e o rato e o pato e o cao" por causa do "e"/"o")
+const STOPWORDS_PT = new Set(['a', 'o', 'e', 'é', 'as', 'os', 'um', 'uma', 'de', 'da', 'do', 'das', 'dos', 'em', 'no', 'na', 'nos', 'nas', 'que', 'se', 'eu', 'tu', 'ele', 'ela', 'vc', 'você', 'voce', 'me', 'te', 'meu', 'minha', 'seu', 'sua', 'pra', 'para', 'por', 'com', 'sem', 'mas', 'ou', 'não', 'nao', 'sim', 'ta', 'tá', 'to', 'tô', 'ai', 'aí', 'la', 'lá', 'ja', 'já', 'so', 'só', 'mais', 'muito', 'the', 'and', 'to', 'of', 'in', 'is', 'it', 'i', 'you']);
+const RE_EMOJI_CUSTOM = /<a?:\w+:(\d+)>/g;
+const RE_EMOJI_UNI = /\p{Extended_Pictographic}(?:\uFE0F|\u20E3|\p{Emoji_Modifier}|\u200D\p{Extended_Pictographic})*/gu;
+// link de CDN do discord (imagem/arquivo colado como texto): morre sempre, mesmo se o
+// regex generico de link falhar por algum motivo
+const RE_CDN = /(?:cdn\.discordapp\.com|media\.discordapp\.net|images-ext-\d+\.discordapp\.net|attachments\/\d{17,20}\/\d{17,20}\/)/i;
+function temLinkCdn(m) {
+  const partes = [normLinkText(m.content || '')];
+  for (const e of m.embeds || []) partes.push(e.url || '', (e.image && e.image.url) || '', (e.thumbnail && e.thumbnail.url) || '', (e.video && e.video.url) || '');
+  return RE_CDN.test(partes.join(' '));
+}
+// devolve o motivo (string) se a mensagem tem repeticao interna acima do limite; senao null
+function repeticaoInterna(content) {
+  const bruto = String(content || '');
+  if (!bruto) return null;
+  const contagem = new Map();
+  const conta = (t) => contagem.set(t, (contagem.get(t) || 0) + 1);
+  let total = 0;
+  // emoji custom (por id) e emoji unicode contam como token
+  let resto = bruto.replace(RE_EMOJI_CUSTOM, (_, id) => { conta('ce:' + id); total++; return ' '; });
+  resto = resto.replace(RE_EMOJI_UNI, (e) => { conta('e:' + e.replace(/\uFE0F/g, '')); total++; return ' '; });
+  // palavras: minusculo, sem acento, sem pontuacao, sem invisivel
+  const limpo = resto.normalize('NFKD').replace(/\p{M}/gu, '').replace(RE_INV, ' ').toLowerCase();
+  const palavras = limpo.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  for (const p of palavras) {
+    if (RE_RISADA_K.test(p)) continue; // kkkkk liberado
+    // "naaaao" / "simmmm" / "aaaa": letra esticada nao e palavra repetida, mas
+    // colapsa pra comparar (oi oiii oi oi = mesma palavra)
+    const norm = p.replace(/(.)\1+/gu, '$1');
+    conta('w:' + norm);
+    total++;
+  }
+  let pior = null;
+  for (const [t, c] of contagem) {
+    if (c <= REP_INTERNA_MAX) continue;
+    const w = t.startsWith('w:') ? t.slice(2) : null;
+    // stopword / letra solta so conta se dominar a msg ("a a a a a" cai, "o gato e o rato e o pato" nao)
+    if (w && (STOPWORDS_PT.has(w) || w.length <= 1) && c < total * 0.5) continue;
+    if (!pior || c > pior.c) pior = { t, c };
+  }
+  if (pior) return `repeticao-interna:${pior.t.slice(0, 30)}x${pior.c}`;
+  // grudado: oioioioioi, hahahahaha, lolololol, 😂😂😂😂 sem espaco (unidade de 2+ chars
+  // repetida mais de 3 vezes). unidade de uma letra so (aaaaaa, kkkkkk) e liberada.
+  const gluer = limpo.replace(/\s+/g, '');
+  const re = /(\S{2,10}?)\1{3,}/gu;
+  let mm;
+  while ((mm = re.exec(gluer))) {
+    const u = mm[1];
+    if (/^(.)\1*$/u.test(u)) continue; // mesma letra esticada
+    if (RE_RISADA_K.test(u)) continue;
+    return `repeticao-grudada:${u.slice(0, 10)}`;
+  }
+  // emoji unicode colado tambem passa pelo regex acima? nao (foi trocado por espaco), entao
+  // a contagem por emoji la em cima ja cobre 😂😂😂😂.
+  return null;
+}
 const floodBuf = new Map();
 const repBuf = new Map();
 const penaltyUntil = new Map();
@@ -572,6 +636,10 @@ const client = new Client({
 
 client.once('ready', async () => {
   log('READY', { user: client.user.tag, id: client.user.id, guilds: client.guilds.cache.size });
+  // troca de guarda: este bot ja esta online, agora sim derruba o run antigo do Actions.
+  // (antes o antigo era cancelado ANTES do novo subir: 1-2min offline a cada redeploy,
+  //  e era nesse buraco que spam passava e o .nuke now nao respondia)
+  cancelarRunsAntigos().catch(err);
   client.user.setActivity('o sofrimento dos condenados', { type: 3 });
   if (typeof varrerLinks === 'function') varrerLinks().catch(err); else err(new Error('varrerLinks ausente no ready'));
   if (typeof varrerFlood === 'function') varrerFlood().catch(err); else err(new Error('varrerFlood ausente no ready'));
@@ -1095,6 +1163,15 @@ client.on('messageCreate', async (m) => {
 
     // 1.5) qualquer link / convite de server morre na hora
     if (temLink(m.content)) reasons.push('link');
+    // 1.5b) link de cdn do discord (imagem colada como texto / embed): morre sempre
+    if (temLinkCdn(m)) reasons.push('link-cdn');
+
+    // 1.55) repeticao DENTRO da mensagem: mesma palavra/emoji mais de 3x
+    //       (nigga\nnigga\nnigga..., oi oi oi oi, oioioioi, 😂😂😂😂). k liberado.
+    {
+      const rep = repeticaoInterna(m.content);
+      if (rep) reasons.push(rep);
+    }
 
     // 1.6) asterisco (markdown quebrado tipo **teste*): apaga na hora, sem castigo
     if ((m.content || '').includes('*')) reasons.push('asterisco');
@@ -1115,7 +1192,7 @@ client.on('messageCreate', async (m) => {
     // cobre o caso que passa por baixo dos limites por-usuario
     // (cada conta manda so 1 mensagem). Nao ativa modo global/canal.
     {
-      const suspeitaBase = reasons.some((r) => /^(link|header|invisivel|asterisco|chars>)/.test(r));
+      const suspeitaBase = reasons.some((r) => /^(link|header|invisivel|asterisco|chars>|repeticao-)/.test(r));
       const sig = msgSig(m);
       if ((suspeitaBase || sig.length >= 80) && sig !== 'vazia') {
         const k = `${m.guild.id}:${sig.slice(0, 220)}`;
@@ -1272,6 +1349,7 @@ async function castigar(guild, userId, motivo, opts = {}) {
 
 // varre os canais ao ligar: apaga sobra de flood/repetida/invisivel que passou durante o gap do restart
 async function varrerFlood() {
+  const cfgChars = (readJsonSafe(ANTIFLOOD_CFG, ANTIFLOOD_DEFAULT).chars) || ANTIFLOOD_DEFAULT.chars;
   for (const gid of INFERNO_GUILDS) {
     const g = client.guilds.cache.get(gid);
     if (!g) continue;
@@ -1293,6 +1371,11 @@ async function varrerFlood() {
           }
           for (const x of arr) { const v = x.content || ''; if (v && !v.replace(RE_INV, '')) alvos.add(x); }
           for (const x of arr) { if ((x.content || '').includes('*')) alvos.add(x); }
+          // mesmas regras instantaneas do messageCreate (pega o que passou enquanto o bot reiniciava)
+          for (const x of arr) {
+            const c = x.content || '';
+            if (c.length > cfgChars || repeticaoInterna(c) || temLinkCdn(x)) alvos.add(x);
+          }
         }
         for (const x of alvos) await x.delete().catch(() => {});
         if (alvos.size) log('VARREDURA_FLOOD', { canal: ch.id, apagadas: alvos.size });
@@ -1683,8 +1766,8 @@ setInterval(bumpTick, 60 * 1000);
 // ---------- bot imortal no GitHub Actions ----------
 // o runner tem teto de 6h por job: quando dava o teto, o bot morria e so o cron
 // (a cada 6h) religava — as vezes com o codigo velho do main. aqui o proprio bot
-// dispara um run novo ANTES do teto: o concurrency cancela este job e o loop do
-// workflow liga de novo com o codigo do repo. sem buraco de horas, sem versao antiga.
+// dispara um run novo ANTES do teto; quando o novo ficar READY ele cancela este
+// (troca de guarda: nunca fica offline). sem buraco de horas, sem versao antiga.
 const RUN_ID = process.env.GITHUB_RUN_ID;
 const GH_REPO = process.env.GITHUB_REPOSITORY;
 const GH_TOK = process.env.GITHUB_TOKEN;
@@ -1706,6 +1789,19 @@ async function iniciarRunSatan(motivo) {
   if (!r.ok && r.status !== 204) throw new Error('dispatch ' + r.status + ' ' + (await r.text()).slice(0, 160));
   log('RUN_NOVO', { motivo });
   return true;
+}
+async function cancelarRunsAntigos() {
+  if (!GH_TOK || !GH_REPO || !RUN_ID) return;
+  const H = { Authorization: `token ${GH_TOK}`, Accept: 'application/vnd.github+json', 'User-Agent': 'satan-bot' };
+  const r = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/workflows/satan.yml/runs?per_page=20&status=in_progress`, { headers: H });
+  if (!r.ok) throw new Error('lista runs ' + r.status);
+  const j = await r.json();
+  const meu = Number(RUN_ID);
+  const antigos = (j.workflow_runs || []).filter((x) => Number(x.id) < meu);
+  for (const x of antigos) {
+    const c = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/runs/${x.id}/cancel`, { method: 'POST', headers: H }).catch(() => null);
+    log('TROCA_DE_GUARDA', { runAntigo: x.id, runNovo: meu, ok: !!(c && (c.ok || c.status === 202)) });
+  }
 }
 async function descobrirInicioDoJob() {
   // process.uptime() conta so o node; o npm i antes ja comeu uns minutos do job
