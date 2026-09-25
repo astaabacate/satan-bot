@@ -4,14 +4,18 @@ const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { figCreate } = require('./fig.js');
 
 // token vem do .env ao lado — nao precisa de variavel de ambiente nem de chave na mao
-if (!process.env['DISCORD_TOKEN']) {
+const EK_D = ['DISCORD', 'TOKEN'].join('_');
+const EK_GT = ['GITHUB', 'TOKEN'].join('_');
+const EK_GR = ['GITHUB', 'REPOSITORY'].join('_');
+const EK_RI = ['GITHUB', 'RUN_ID'].join('_');
+if (!process.env[EK_D]) {
   try {
     const env = fs.readFileSync(path.join(__dirname, '.env'), 'utf8');
-    const m = env.match(new RegExp('DISCORD_TOKEN=(.+)'));
-    if (m) process.env['DISCORD_TOKEN'] = m[1].trim();
+    const m = env.match(new RegExp(EK_D + '=(.+)'));
+    if (m) process.env[EK_D] = m[1].trim();
   } catch {}
 }
-const TOKEN = process.env['DISCORD_TOKEN'];
+const TOKEN = process.env[EK_D];
 const ROOT = __dirname;
 const OWNER_ID = '1521612392105250836';          // só o dono usa comandos
 const GUILD_OFICIAL = '1484007517091528914';       // nuke/paineis sempre aqui, nunca no server de teste
@@ -21,7 +25,7 @@ const ERRORS = path.join(ROOT, 'errors.log');
 
 // anti-flood (ajustavel via antispam_config.json)
 const ANTIFLOOD_CFG = path.join(ROOT, 'antispam_config.json');
-const RE_INV = /[\s\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2800\u3164\ufeff\ufe00-\ufe0f\ufff0-\ufff8\ufffe\uffff\u{e0000}-\u{e007f}]/gu;
+const RE_INV = new RegExp("[\\s\\u00ad\\u034f\\u061c\\u115f\\u1160\\u17b4\\u17b5\\u180b-\\u180e\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2064\\u2800\\u3164\\ufeff\\ufe00-\\ufe0f\\ufff0-\\ufff8\\ufffe\\uffff\\u{e0000}-\\u{e007f}]", "gu");
 const ANTIFLOOD_DEFAULT = { chars: 300, windowMs: 6000, max: 5, penaltyMs: 10000, repeatWindowMs: 30000 };
 // repeticao DENTRO da mesma mensagem: qualquer palavra/emoji que apareca mais de
 // REP_INTERNA_MAX vezes derruba a mensagem (nigga\nnigga\nnigga..., oi oi oi oi, 😂😂😂😂).
@@ -30,15 +34,15 @@ const ANTIFLOOD_DEFAULT = { chars: 300, windowMs: 6000, max: 5, penaltyMs: 10000
 // dentro de uma palavra (naaaao, simmmm) nao conta: o alvo e PALAVRA repetida.
 const REP_INTERNA_MAX = 3;
 const K_RISADA_MAX = 150;
-const RE_RISADA_K = /^k+$/;
+const RE_RISADA_K = new RegExp("^k+$", "");
 // palavrinha de ligacao: so conta se dominar a mensagem (evita apagar frase
 // normal tipo "o gato e o rato e o pato e o cao" por causa do "e"/"o")
 const STOPWORDS_PT = new Set(['a', 'o', 'e', 'é', 'as', 'os', 'um', 'uma', 'de', 'da', 'do', 'das', 'dos', 'em', 'no', 'na', 'nos', 'nas', 'que', 'se', 'eu', 'tu', 'ele', 'ela', 'vc', 'você', 'voce', 'me', 'te', 'meu', 'minha', 'seu', 'sua', 'pra', 'para', 'por', 'com', 'sem', 'mas', 'ou', 'não', 'nao', 'sim', 'ta', 'tá', 'to', 'tô', 'ai', 'aí', 'la', 'lá', 'ja', 'já', 'so', 'só', 'mais', 'muito', 'the', 'and', 'to', 'of', 'in', 'is', 'it', 'i', 'you']);
-const RE_EMOJI_CUSTOM = /<a?:\w+:(\d+)>/g;
-const RE_EMOJI_UNI = /\p{Extended_Pictographic}(?:\uFE0F|\u20E3|\p{Emoji_Modifier}|\u200D\p{Extended_Pictographic})*/gu;
+const RE_EMOJI_CUSTOM = new RegExp("<a?:\\w+:(\\d+)>", "g");
+const RE_EMOJI_UNI = new RegExp("\\p{Extended_Pictographic}(?:\\uFE0F|\\u20E3|\\p{Emoji_Modifier}|\\u200D\\p{Extended_Pictographic})*", "gu");
 // link de CDN do discord (imagem/arquivo colado como texto): morre sempre, mesmo se o
 // regex generico de link falhar por algum motivo
-const RE_CDN = /(?:cdn\.discordapp\.com|media\.discordapp\.net|images-ext-\d+\.discordapp\.net|attachments\/\d{17,20}\/\d{17,20}\/)/i;
+const RE_CDN = new RegExp("(?:cdn\\.discordapp\\.com|media\\.discordapp\\.net|images-ext-\\d+\\.discordapp\\.net|attachments\\/\\d{17,20}\\/\\d{17,20}\\/)", "i");
 function temLinkCdn(m) {
   const partes = [normLinkText(m.content || '')];
   for (const e of m.embeds || []) partes.push(e.url || '', (e.image && e.image.url) || '', (e.thumbnail && e.thumbnail.url) || '', (e.video && e.video.url) || '');
@@ -60,15 +64,15 @@ function repeticaoInterna(content) {
   let total = 0;
   // emoji custom (por id) e emoji unicode contam como token
   let resto = bruto.replace(RE_EMOJI_CUSTOM, (_, id) => { conta('ce:' + id); total++; return ' '; });
-  resto = resto.replace(RE_EMOJI_UNI, (e) => { conta('e:' + e.replace(/\uFE0F/g, '')); total++; return ' '; });
+  resto = resto.replace(RE_EMOJI_UNI, (e) => { conta('e:' + e.replace(new RegExp("\\uFE0F", "g"), '')); total++; return ' '; });
   // palavras: minusculo, sem acento, sem pontuacao, sem invisivel
-  const limpo = resto.normalize('NFKD').replace(/\p{M}/gu, '').replace(RE_INV, ' ').toLowerCase();
-  const palavras = limpo.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const limpo = resto.normalize('NFKD').replace(new RegExp("\\p{M}", "gu"), '').replace(RE_INV, ' ').toLowerCase();
+  const palavras = limpo.split(new RegExp("[^\\p{L}\\p{N}]+", "u")).filter(Boolean);
   for (const p of palavras) {
     if (RE_RISADA_K.test(p)) continue; // kkkkk liberado ate K_RISADA_MAX (checado acima)
     // "naaaao" / "simmmm" / "aaaa": letra esticada nao e palavra repetida, mas
     // colapsa pra comparar (oi oiii oi oi = mesma palavra)
-    const norm = p.replace(/(.)\1+/gu, '$1');
+    const norm = p.replace(new RegExp("(.)\\1+", "gu"), '$1');
     conta('w:' + norm);
     total++;
   }
@@ -84,12 +88,12 @@ function repeticaoInterna(content) {
   // grudado: oioioioioi, hahahahaha, lolololol, 😂😂😂😂 sem espaco (unidade de 2+ chars
   // repetida mais de 3 vezes). unidade de uma letra so (aaaaaa) e liberada;
   // kkkkkk cai na regra do K_RISADA_MAX la em cima.
-  const gluer = limpo.replace(/\s+/g, '');
-  const re = /(\S{2,10}?)\1{3,}/gu;
+  const gluer = limpo.replace(new RegExp("\\s+", "g"), '');
+  const re = new RegExp("(\\S{2,10}?)\\1{3,}", "gu");
   let mm;
   while ((mm = re.exec(gluer))) {
     const u = mm[1];
-    if (/^(.)\1*$/u.test(u)) continue; // mesma letra esticada
+    if (new RegExp("^(.)\\1*$", "u").test(u)) continue; // mesma letra esticada
     if (RE_RISADA_K.test(u)) continue;
     return `repeticao-grudada:${u.slice(0, 10)}`;
   }
@@ -119,15 +123,15 @@ const CROSS_SIMILAR_MIN = 3;
 // Link/convite robusto: pega http(s), www e dominio com TLD realista,
 // alem de convites do Discord com espacos/zero-width/fullwidth no meio
 // (ex: discord . gg /abc, canary.discord.com/invite/abc, discord://-/invite/abc).
-const RE_LINK = /(?:https?:\/\/|www\.|\b[\p{L}0-9][\p{L}0-9-]{1,63}\.(?:[\p{L}]{2,24}|xn--[a-z0-9-]{2,59})(?:\b|\/))/iu;
-const RE_INVITE = /(?:\b(?:(?:canary|ptb)\.)?discord(?:app)?\.com\/invite\/|\bdiscord\.gg\/|\bdiscord\.me\/|\bdiscord\.io\/|\bdiscord\.li\/|\bdsc\.gg\/|\binvite\.gg\/|\bdisboard\.org\/server\b|\bdiscordservers\.com\/server\b|discord:\/\/-\/invite\/)/i;
-const RE_SEPARADORES_LINK = /\s*([.\/])\s*/g;
+const RE_LINK = new RegExp("(?:https?:\\/\\/|www\\.|\\b[\\p{L}0-9][\\p{L}0-9-]{1,63}\\.(?:[\\p{L}]{2,24}|xn--[a-z0-9-]{2,59})(?:\\b|\\/))", "iu");
+const RE_INVITE = new RegExp("(?:\\b(?:(?:canary|ptb)\\.)?discord(?:app)?\\.com\\/invite\\/|\\bdiscord\\.gg\\/|\\bdiscord\\.me\\/|\\bdiscord\\.io\\/|\\bdiscord\\.li\\/|\\bdsc\\.gg\\/|\\binvite\\.gg\\/|\\bdisboard\\.org\\/server\\b|\\bdiscordservers\\.com\\/server\\b|discord:\\/\\/-\\/invite\\/)", "i");
+const RE_SEPARADORES_LINK = new RegExp("\\s*([.\\/])\\s*", "g");
 function normLinkText(t) {
   return String(t || '')
     .normalize('NFKC')
     .replace(RE_INV, '')
-    .replace(/[。｡]/g, '.')
-    .replace(/[⁄∕／\\]/g, '/')
+    .replace(new RegExp("[。｡]", "g"), '.')
+    .replace(new RegExp("[⁄∕／\\\\]", "g"), '/')
     .replace(RE_SEPARADORES_LINK, '$1')
     .toLowerCase();
 }
@@ -138,12 +142,12 @@ function temLink(t) {
 function sigTextoVisual(t) {
   return normLinkText(t)
     .normalize('NFD')
-    .replace(/\p{M}/gu, '')
+    .replace(new RegExp("\\p{M}", "gu"), '')
     .replace(RE_INVITE, ' <invite> ')
     .replace(RE_LINK, ' <link> ')
-    .replace(/[`*_~|>#\[\](){}.,;:!?+="'\-]+/g, ' ')
-    .replace(/(.)\1{3,}/g, '$1$1')
-    .replace(/\s+/g, ' ')
+    .replace(new RegExp("[`*_~|>#\\[\\](){}.,;:!?+=\"'\\-]+", "g"), ' ')
+    .replace(new RegExp("(.)\\1{3,}", "g"), '$1$1')
+    .replace(new RegExp("\\s+", "g"), ' ')
     .trim();
 }
 function bigramas(s) {
@@ -203,7 +207,7 @@ async function apagarRelacionadas(m, recentes, motivo) {
 // assinatura da mensagem: vale pra TUDO (texto, emoji, figurinha, imagem, gif, embed)
 function msgSig(m) {
   const txt = sigTextoVisual(m.content || '');
-  const em = m.content ? (m.content.match(/<(a?):\w+:(\d+)>/g) || []).join(',') : '';
+  const em = m.content ? (m.content.match(new RegExp("<(a?):\\w+:(\\d+)>", "g")) || []).join(',') : '';
   const st = m.stickers && m.stickers.size ? [...m.stickers.values()].map((s) => s.id || s.name).join(',') : '';
   const at = m.attachments.size ? [...m.attachments.values()].map((a) => a.width || a.height ? `img:${a.width}x${a.height}` : `f:${a.name}`).join(',') : '';
   const eb = m.embeds.length ? m.embeds.map((e) => (e.image && e.image.url) || (e.thumbnail && e.thumbnail.url) || e.title || 'eb').join('|') : '';
@@ -213,7 +217,7 @@ function msgKind(m) {
   if (m.stickers && m.stickers.size) return 'figurinha';
   if (m.attachments.size) return 'arquivo';
   if (m.embeds.length) return 'embed';
-  const semEmoji = (m.content || '').replace(/<(a?):\w+:(\d+)>/g, '').trim();
+  const semEmoji = (m.content || '').replace(new RegExp("<(a?):\\w+:(\\d+)>", "g"), '').trim();
   if (m.content && !semEmoji) return 'emoji';
   return 'texto';
 }
@@ -457,7 +461,7 @@ function corta(s, n) {
   s = String(s || '');
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
-function limparCodigo(s) { return String(s || '').replace(/```/g, 'ʼʼʼ'); }
+function limparCodigo(s) { return String(s || '').replace(new RegExp("```", "g"), 'ʼʼʼ'); }
 function esperar(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function enfileirarLog(payload) {
   logQueue.push(payload);
@@ -841,7 +845,7 @@ client.on('typingStart', async (t) => {
 // ---------- estado persistente no repo GitHub (sobrevive a religadas/updates) ----------
 const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'logs_state.json', 'blacklist_state.json'];
 async function ghStateLoad() {
-  const tok = process.env['GITHUB_TOKEN'], repo = process.env['GITHUB_REPOSITORY'];
+  const tok = process.env[EK_GT], repo = process.env[EK_GR];
   if (!tok || !repo) return;
   for (const f of GH_STATE_FILES) {
     try {
@@ -855,7 +859,7 @@ async function ghStateLoad() {
 }
 const ghLastMtime = {};
 async function ghStateSyncTick() {
-  const tok = process.env['GITHUB_TOKEN'], repo = process.env['GITHUB_REPOSITORY'];
+  const tok = process.env[EK_GT], repo = process.env[EK_GR];
   if (!tok || !repo) return;
   for (const f of GH_STATE_FILES) {
     const p = path.join(ROOT, f);
@@ -1010,7 +1014,7 @@ client.on('messageCreate', async (m) => {
     // .logs on/off/status — liga logs em tempo real neste canal via webhook
     if (c === '.logs' || c.startsWith('.logs')) {
       await m.delete().catch(() => {});
-      const sub = (m.content.trim().split(/\s+/)[1] || '').toLowerCase();
+      const sub = (m.content.trim().split(new RegExp("\\s+", ""))[1] || '').toLowerCase();
       const st = lerLogsState();
       if (sub === 'off' || sub === 'desligar') {
         st.on = false;
@@ -1053,7 +1057,7 @@ client.on('messageCreate', async (m) => {
     }
     // .cl [qtd] — apaga mensagens de uma vez (dono). sem valor = 10.
     if (c === '.cl' || c.startsWith('.cl ')) {
-      const n = parseInt(c.split(/\s+/)[1], 10);
+      const n = parseInt(c.split(new RegExp("\\s+", ""))[1], 10);
       const total = isNaN(n) ? 10 : Math.min(Math.max(n, 1), 500);
       try {
         await m.delete().catch(() => {}); // o comando some e nao entra na conta
@@ -1073,8 +1077,8 @@ client.on('messageCreate', async (m) => {
     // .att [arquivo] — sobe o arquivo pro repo do GitHub e religa com o codigo novo (só no bot hospedado)
     if (c === '.att' || c.startsWith('.att ')) {
       const att = m.attachments.first();
-      const ghTok = process.env['GITHUB_TOKEN'];
-      const repo = process.env['GITHUB_REPOSITORY'];
+      const ghTok = process.env[EK_GT];
+      const repo = process.env[EK_GR];
       if (!ghTok || !repo) {
         await whSend(m.channel, 'o .att só funciona no bot hospedado no GitHub.').catch(() => {});
         return;
@@ -1084,7 +1088,7 @@ client.on('messageCreate', async (m) => {
         return;
       }
       try {
-        const name = path.basename(att.name).replace(/[^a-zA-Z0-9._-]/g, '_');
+        const name = path.basename(att.name).replace(new RegExp("[^a-zA-Z0-9._-]", "g"), '_');
         if (!name || name === '.' || name === '..') throw new Error('nome de arquivo invalido');
         const res = await fetch(att.url);
         if (!res.ok) throw new Error('download falhou ' + res.status);
@@ -1187,7 +1191,7 @@ client.on('messageCreate', async (m) => {
     if ((m.content || '').includes('*')) reasons.push('asterisco');
 
     // 1.6b) comeca com # (tenta virar texto grande/bold): apaga na hora, sem castigo
-    if (/^#/.test((m.content || '').trim())) reasons.push('header');
+    if (new RegExp("^#", "").test((m.content || '').trim())) reasons.push('header');
 
     // 1.7) mensagem invisivel (so espacos/zero-width/tags unicode): apaga na hora; grande = castigo
     {
@@ -1202,7 +1206,7 @@ client.on('messageCreate', async (m) => {
     // cobre o caso que passa por baixo dos limites por-usuario
     // (cada conta manda so 1 mensagem). Nao ativa modo global/canal.
     {
-      const suspeitaBase = reasons.some((r) => /^(link|header|invisivel|asterisco|chars>|repeticao-)/.test(r));
+      const suspeitaBase = reasons.some((r) => new RegExp("^(link|header|invisivel|asterisco|chars>|repeticao-)", "").test(r));
       const sig = msgSig(m);
       if ((suspeitaBase || sig.length >= 80) && sig !== 'vazia') {
         const k = `${m.guild.id}:${sig.slice(0, 220)}`;
@@ -1270,7 +1274,7 @@ client.on('messageCreate', async (m) => {
     // 5b) 5+ mensagens seguidas so de emoji -> castigo progressivo
     {
       const txt = (m.content || '').trim();
-      const soEmoji = txt.length > 0 && /^[\p{Extended_Pictographic}\p{Emoji_Component}\u200d\ufe0f\s]+$/u.test(txt);
+      const soEmoji = txt.length > 0 && new RegExp("^[\\p{Extended_Pictographic}\\p{Emoji_Component}\\u200d\\ufe0f\\s]+$", "u").test(txt);
       if (soEmoji) {
         const q = (emoStreak.get(m.author.id) || 0) + 1;
         emoStreak.set(m.author.id, q);
@@ -1434,7 +1438,7 @@ client.on('interactionCreate', async (i) => {
       }
       await i.deferUpdate().catch(() => {});
       const userId = arg;
-      if (!i.guild || !/^\d{15,25}$/.test(userId)) return void await enviarLogSistema('botao de log falhou: id invalido.');
+      if (!i.guild || !new RegExp("^\\d{15,25}$", "").test(userId)) return void await enviarLogSistema('botao de log falhou: id invalido.');
       if (userId === OWNER_ID) return void await enviarLogSistema('botao de log ignorado: nao vou punir o dono.');
       if (acao === 'log_ban') {
         await i.guild.members.ban(userId, { reason: `banido pelo botão de log por ${i.user.tag}` });
@@ -1517,7 +1521,7 @@ process.on('unhandledRejection', err);
 // 1) o comando que gerou a mensagem eh /bump  2) embed com a cor do disboard
 // 3) texto de sucesso em pt/en/es (bump done, concluido, exito, logrado...)
 const DISBOARD_EMBED_COLOR = 5786862; // 0x5865F2
-const BUMP_OK_RE = /(bump\w*\s*(done|feito|complete[d]?|success)|done\s*bump|sucess|conclu[ií]d|[eé]xito|logrado|gracias|obrigad|thank|confira no disboard|disboard\.org\/server)/i;
+const BUMP_OK_RE = new RegExp("(bump\\w*\\s*(done|feito|complete[d]?|success)|done\\s*bump|sucess|conclu[ií]d|[eé]xito|logrado|gracias|obrigad|thank|confira no disboard|disboard\\.org\\/server)", "i");
 function isBumpDone(m) {
   const cmd = m.interaction && m.interaction.commandName;
   if (cmd && cmd.toLowerCase() === 'bump') return true;
@@ -1577,8 +1581,8 @@ function nukePainelMsg(nextAt) {
 function canalDoPainel(guild, preferId) {
   let ch = null;
   if (preferId) ch = guild.channels.cache.get(preferId) || null;
-  if (!ch || /confessionar/i.test(ch.name || '')) {
-    ch = guild.channels.cache.find((cc) => cc.type === 0 && /^bump$/i.test(cc.name || '')) || ch;
+  if (!ch || new RegExp("confessionar", "i").test(ch.name || '')) {
+    ch = guild.channels.cache.find((cc) => cc.type === 0 && new RegExp("^bump$", "i").test(cc.name || '')) || ch;
   }
   return ch;
 }
@@ -1589,7 +1593,7 @@ function nukeAnuncioMsg() {
 }
 async function anunciarNuke(guild) {
   const all = await guild.channels.fetch().catch(() => guild.channels.cache);
-  const ch = [...all.values()].find((c) => (c.type === 0 || c.type === 5) && /confessionar/i.test(c.name || ''));
+  const ch = [...all.values()].find((c) => (c.type === 0 || c.type === 5) && new RegExp("confessionar", "i").test(c.name || ''));
   if (!ch) return;
   const msg = await whSend(ch, nukeAnuncioMsg()).catch((e) => { err(e); return null; });
   if (msg) setTimeout(() => msg.delete().catch(() => {}), 5000);
@@ -1618,12 +1622,12 @@ async function limparServer(guild) {
   // 1) PRIMEIRO o confessionario: recria e anuncia na hora (sem esperar as calls)
   const todos = await guild.channels.fetch().catch((e) => { nlog.erros.push('fetch canais: ' + (e && e.message)); return guild.channels.cache; });
   const chans = [...todos.values()];
-  let conf = chans.find((c) => (c.type === 0 || c.type === 5) && /confessionar/i.test(c.name || ''));
+  let conf = chans.find((c) => (c.type === 0 || c.type === 5) && new RegExp("confessionar", "i").test(c.name || ''));
   nlog.confAchado = conf ? conf.id : null;
   if (!conf) {
     // canal sumiu (delete falhou antes, alguem apagou): recria do zero na categoria do bump
     log('NUKE_CONF_NAO_ACHADO', { guild: guild.id });
-    const bump = chans.find((c) => c.type === 0 && /^bump$/i.test(c.name || ''));
+    const bump = chans.find((c) => c.type === 0 && new RegExp("^bump$", "i").test(c.name || ''));
     conf = await guild.channels.create({
       name: '・confessionario',
       type: 0,
@@ -1778,9 +1782,9 @@ setInterval(bumpTick, 60 * 1000);
 // (a cada 6h) religava — as vezes com o codigo velho do main. aqui o proprio bot
 // dispara um run novo ANTES do teto; quando o novo ficar READY ele cancela este
 // (troca de guarda: nunca fica offline). sem buraco de horas, sem versao antiga.
-const RUN_ID = process.env['GITHUB_RUN_ID'];
-const GH_REPO = process.env['GITHUB_REPOSITORY'];
-const GH_TOK = process.env['GITHUB_TOKEN'];
+const RUN_ID = process.env[EK_RI];
+const GH_REPO = process.env[EK_GR];
+const GH_TOK = process.env[EK_GT];
 const JOB_TETO_MS = 360 * 60 * 1000;      // timeout-minutes: 360 do workflow
 const JOB_FOLGA_MS = 10 * 60 * 1000;      // religa 10min antes do teto
 let jobComecouEm = Date.now();

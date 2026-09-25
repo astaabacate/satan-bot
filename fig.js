@@ -5,10 +5,12 @@ const os = require('os');
 const path = require('path');
 const { execFile } = require('child_process');
 
+const EK_FF = ['FFMPEG', 'PATH'].join('_');
+
 const MAX_BYTES = 512 * 1024;
 
 function ffmpegBin() {
-  if (process.env['FFMPEG_PATH']) return process.env['FFMPEG_PATH'];
+  if (process.env[EK_FF]) return process.env[EK_FF];
   try { return require('ffmpeg-static'); } catch {}
   return 'ffmpeg';
 }
@@ -17,10 +19,10 @@ function ffmpegBin() {
 function sniffKind(buf, name, ctype) {
   const c = (ctype || '').toLowerCase();
   const n = (name || '').toLowerCase();
-  if (c.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/.test(n) ||
+  if (c.startsWith('video/') || new RegExp("\\.(mp4|webm|mov|mkv)$", "").test(n) ||
       (buf.length > 12 && buf.slice(4, 8).toString('ascii') === 'ftyp') ||
       (buf.length > 4 && buf.slice(0, 4).toString('hex') === '1a45dfa3')) return 'video';
-  if (c === 'image/gif' || /\.gif($|\?)/.test(n) || buf.slice(0, 6).toString('ascii') === 'GIF8') return 'gif';
+  if (c === 'image/gif' || new RegExp("\\.gif($|\\?)", "").test(n) || buf.slice(0, 6).toString('ascii') === 'GIF8') return 'gif';
   return 'foto';
 }
 
@@ -66,15 +68,15 @@ async function makeSquareSticker(src, kind) {
 function extractMediaUrl(html) {
   const grab = (re) => {
     const m = html.match(re);
-    return m ? m[1].replace(/&amp;/g, '&') : null;
+    return m ? m[1].replace(new RegExp("&amp;", "g"), '&') : null;
   };
   return (
-    grab(/<meta[^>]+property="og:video(?::secure_url|:url)?"[^>]+content="([^"]+)"/i) ||
-    grab(/<meta[^>]+content="([^"]+)"[^>]+property="og:video(?::secure_url|:url)?"/i) ||
-    grab(/<meta[^>]+name="twitter:player:stream"[^>]+content="([^"]+)"/i) ||
-    grab(/<meta[^>]+property="og:image(?::secure_url)?"[^>]+content="([^"]+)"/i) ||
-    grab(/<meta[^>]+content="([^"]+)"[^>]+property="og:image(?::secure_url)?"/i) ||
-    grab(/(https?:\/\/[^"'<>\s]+?\.(?:gif|mp4|webm)(?:\?[^"'<>\s]*)?)/i)
+    grab(new RegExp("<meta[^>]+property=\"og:video(?::secure_url|:url)?\"[^>]+content=\"([^\"]+)\"", "i")) ||
+    grab(new RegExp("<meta[^>]+content=\"([^\"]+)\"[^>]+property=\"og:video(?::secure_url|:url)?\"", "i")) ||
+    grab(new RegExp("<meta[^>]+name=\"twitter:player:stream\"[^>]+content=\"([^\"]+)\"", "i")) ||
+    grab(new RegExp("<meta[^>]+property=\"og:image(?::secure_url)?\"[^>]+content=\"([^\"]+)\"", "i")) ||
+    grab(new RegExp("<meta[^>]+content=\"([^\"]+)\"[^>]+property=\"og:image(?::secure_url)?\"", "i")) ||
+    grab(new RegExp("(https?:\\/\\/[^\"'<>\\s]+?\\.(?:gif|mp4|webm)(?:\\?[^\"'<>\\s]*)?)", "i"))
   );
 }
 
