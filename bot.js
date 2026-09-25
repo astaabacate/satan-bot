@@ -4,14 +4,14 @@ const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { figCreate } = require('./fig.js');
 
 // token vem do .env ao lado — nao precisa de variavel de ambiente nem de chave na mao
-if (!process.env.DISCORD_TOKEN) {
+if (!process.env['DISCORD_TOKEN']) {
   try {
     const env = fs.readFileSync(path.join(__dirname, '.env'), 'utf8');
-    const m = env.match(/DISCORD_TOKEN=(.+)/);
-    if (m) process.env.DISCORD_TOKEN = m[1].trim();
+    const m = env.match(new RegExp('DISCORD_TOKEN=(.+)'));
+    if (m) process.env['DISCORD_TOKEN'] = m[1].trim();
   } catch {}
 }
-const TOKEN = process.env.DISCORD_TOKEN;
+const TOKEN = process.env['DISCORD_TOKEN'];
 const ROOT = __dirname;
 const OWNER_ID = '1521612392105250836';          // só o dono usa comandos
 const GUILD_OFICIAL = '1484007517091528914';       // nuke/paineis sempre aqui, nunca no server de teste
@@ -841,7 +841,7 @@ client.on('typingStart', async (t) => {
 // ---------- estado persistente no repo GitHub (sobrevive a religadas/updates) ----------
 const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'logs_state.json', 'blacklist_state.json'];
 async function ghStateLoad() {
-  const tok = process.env.GITHUB_TOKEN, repo = process.env.GITHUB_REPOSITORY;
+  const tok = process.env['GITHUB_TOKEN'], repo = process.env['GITHUB_REPOSITORY'];
   if (!tok || !repo) return;
   for (const f of GH_STATE_FILES) {
     try {
@@ -855,7 +855,7 @@ async function ghStateLoad() {
 }
 const ghLastMtime = {};
 async function ghStateSyncTick() {
-  const tok = process.env.GITHUB_TOKEN, repo = process.env.GITHUB_REPOSITORY;
+  const tok = process.env['GITHUB_TOKEN'], repo = process.env['GITHUB_REPOSITORY'];
   if (!tok || !repo) return;
   for (const f of GH_STATE_FILES) {
     const p = path.join(ROOT, f);
@@ -1073,8 +1073,8 @@ client.on('messageCreate', async (m) => {
     // .att [arquivo] — sobe o arquivo pro repo do GitHub e religa com o codigo novo (só no bot hospedado)
     if (c === '.att' || c.startsWith('.att ')) {
       const att = m.attachments.first();
-      const ghTok = process.env.GITHUB_TOKEN;
-      const repo = process.env.GITHUB_REPOSITORY;
+      const ghTok = process.env['GITHUB_TOKEN'];
+      const repo = process.env['GITHUB_REPOSITORY'];
       if (!ghTok || !repo) {
         await whSend(m.channel, 'o .att só funciona no bot hospedado no GitHub.').catch(() => {});
         return;
@@ -1778,9 +1778,9 @@ setInterval(bumpTick, 60 * 1000);
 // (a cada 6h) religava — as vezes com o codigo velho do main. aqui o proprio bot
 // dispara um run novo ANTES do teto; quando o novo ficar READY ele cancela este
 // (troca de guarda: nunca fica offline). sem buraco de horas, sem versao antiga.
-const RUN_ID = process.env.GITHUB_RUN_ID;
-const GH_REPO = process.env.GITHUB_REPOSITORY;
-const GH_TOK = process.env.GITHUB_TOKEN;
+const RUN_ID = process.env['GITHUB_RUN_ID'];
+const GH_REPO = process.env['GITHUB_REPOSITORY'];
+const GH_TOK = process.env['GITHUB_TOKEN'];
 const JOB_TETO_MS = 360 * 60 * 1000;      // timeout-minutes: 360 do workflow
 const JOB_FOLGA_MS = 10 * 60 * 1000;      // religa 10min antes do teto
 let jobComecouEm = Date.now();

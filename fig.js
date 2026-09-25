@@ -8,7 +8,7 @@ const { execFile } = require('child_process');
 const MAX_BYTES = 512 * 1024;
 
 function ffmpegBin() {
-  if (process.env.FFMPEG_PATH) return process.env.FFMPEG_PATH;
+  if (process.env['FFMPEG_PATH']) return process.env['FFMPEG_PATH'];
   try { return require('ffmpeg-static'); } catch {}
   return 'ffmpeg';
 }
