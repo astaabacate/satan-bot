@@ -25,9 +25,11 @@ const RE_INV = /[\s\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b
 const ANTIFLOOD_DEFAULT = { chars: 300, windowMs: 6000, max: 5, penaltyMs: 10000, repeatWindowMs: 30000 };
 // repeticao DENTRO da mesma mensagem: qualquer palavra/emoji que apareca mais de
 // REP_INTERNA_MAX vezes derruba a mensagem (nigga\nnigga\nnigga..., oi oi oi oi, 😂😂😂😂).
-// unica coisa liberada e risada de k (kkkk, k k k k, kk kk kk kk). Letra repetida
+// risada de k (kkkk, k k k k, kk kk kk kk) e liberada ate K_RISADA_MAX letras k
+// por mensagem. Passou disso, derruba. Letra repetida
 // dentro de uma palavra (naaaao, simmmm) nao conta: o alvo e PALAVRA repetida.
 const REP_INTERNA_MAX = 3;
+const K_RISADA_MAX = 150;
 const RE_RISADA_K = /^k+$/;
 // palavrinha de ligacao: so conta se dominar a mensagem (evita apagar frase
 // normal tipo "o gato e o rato e o pato e o cao" por causa do "e"/"o")
@@ -46,6 +48,13 @@ function temLinkCdn(m) {
 function repeticaoInterna(content) {
   const bruto = String(content || '');
   if (!bruto) return null;
+  // risada de k: conta o total de letras k na mensagem (ignora espaco, quebra de
+  // linha, invisivel e caixa alta; fullwidth normalizado). Ate K_RISADA_MAX passa,
+  // passou disso derruba — vale pra kkkkk..., k k k k, kk kk kk, etc.
+  const paraK = bruto.normalize('NFKC').replace(RE_INV, ' ').toLowerCase();
+  let totalK = 0;
+  for (let i = 0; i < paraK.length; i++) if (paraK[i] === 'k') totalK++;
+  if (totalK > K_RISADA_MAX) return `repeticao-k:kx${totalK}`;
   const contagem = new Map();
   const conta = (t) => contagem.set(t, (contagem.get(t) || 0) + 1);
   let total = 0;
@@ -56,7 +65,7 @@ function repeticaoInterna(content) {
   const limpo = resto.normalize('NFKD').replace(/\p{M}/gu, '').replace(RE_INV, ' ').toLowerCase();
   const palavras = limpo.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
   for (const p of palavras) {
-    if (RE_RISADA_K.test(p)) continue; // kkkkk liberado
+    if (RE_RISADA_K.test(p)) continue; // kkkkk liberado ate K_RISADA_MAX (checado acima)
     // "naaaao" / "simmmm" / "aaaa": letra esticada nao e palavra repetida, mas
     // colapsa pra comparar (oi oiii oi oi = mesma palavra)
     const norm = p.replace(/(.)\1+/gu, '$1');
@@ -73,7 +82,8 @@ function repeticaoInterna(content) {
   }
   if (pior) return `repeticao-interna:${pior.t.slice(0, 30)}x${pior.c}`;
   // grudado: oioioioioi, hahahahaha, lolololol, 😂😂😂😂 sem espaco (unidade de 2+ chars
-  // repetida mais de 3 vezes). unidade de uma letra so (aaaaaa, kkkkkk) e liberada.
+  // repetida mais de 3 vezes). unidade de uma letra so (aaaaaa) e liberada;
+  // kkkkkk cai na regra do K_RISADA_MAX la em cima.
   const gluer = limpo.replace(/\s+/g, '');
   const re = /(\S{2,10}?)\1{3,}/gu;
   let mm;
@@ -1167,7 +1177,7 @@ client.on('messageCreate', async (m) => {
     if (temLinkCdn(m)) reasons.push('link-cdn');
 
     // 1.55) repeticao DENTRO da mensagem: mesma palavra/emoji mais de 3x
-    //       (nigga\nnigga\nnigga..., oi oi oi oi, oioioioi, 😂😂😂😂). k liberado.
+    //       (nigga\nnigga\nnigga..., oi oi oi oi, oioioioi, 😂😂😂😂). k liberado ate 150.
     {
       const rep = repeticaoInterna(m.content);
       if (rep) reasons.push(rep);
