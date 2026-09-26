@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { figCreate } = require('./fig.js');
+const { watchDiscord } = require('./scripts/discord-health.js');
 
 // token vem do .env ao lado — nao precisa de variavel de ambiente nem de chave na mao
 if (!process.env.DISCORD_TOKEN) {
@@ -1501,6 +1502,10 @@ client.on('interactionCreate', async (i) => {
 });
 
 client.on('error', err);
+client.on('shardError', err);
+client.on('shardDisconnect', (event, shardId) => log('DISCORD_DISCONNECT', { shardId, code: event.code, quando: new Date().toISOString() }));
+client.on('shardReconnecting', shardId => log('DISCORD_RECONNECTING', { shardId }));
+client.on('shardResume', shardId => log('DISCORD_RESUME', { shardId }));
 process.on('unhandledRejection', err);
 
 // confirmacao de bump do disboard — nao depende do idioma da resposta.
@@ -1763,20 +1768,22 @@ setInterval(nukeTick, 60 * 1000);
 setInterval(() => { editarPainelNuke(readJsonSafe(NUKE_STATE, {})).catch(() => {}); }, 5 * 1000); // relogio vivo do painel (5s)
 setInterval(bumpTick, 60 * 1000);
 
-// ---------- bot imortal no GitHub Actions ----------
+// ---------- renovacao preventiva no GitHub Actions ----------
 // o runner tem teto de 6h por job: quando dava o teto, o bot morria e so o cron
 // (a cada 6h) religava — as vezes com o codigo velho do main. aqui o proprio bot
 // dispara um run novo ANTES do teto; quando o novo ficar READY ele cancela este
-// (troca de guarda: nunca fica offline). sem buraco de horas, sem versao antiga.
+// (troca de guarda). O watchdog externo cobre falha do runner; Actions nao garante uptime.
 const RUN_ID = process.env.GITHUB_RUN_ID;
 const GH_REPO = process.env.GITHUB_REPOSITORY;
 const GH_TOK = process.env.GITHUB_TOKEN;
 const JOB_TETO_MS = 360 * 60 * 1000;      // timeout-minutes: 360 do workflow
 const JOB_FOLGA_MS = 10 * 60 * 1000;      // religa 10min antes do teto
 let jobComecouEm = Date.now();
-let relogado = false;
+let relogando = false;
+let ultimoDispatch = 0;
 async function iniciarRunSatan(motivo) {
   const r = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/workflows/satan.yml/dispatches`, {
+    signal: AbortSignal.timeout(30_000),
     method: 'POST',
     headers: {
       Authorization: `token ${GH_TOK}`,
@@ -1793,13 +1800,13 @@ async function iniciarRunSatan(motivo) {
 async function cancelarRunsAntigos() {
   if (!GH_TOK || !GH_REPO || !RUN_ID) return;
   const H = { Authorization: `token ${GH_TOK}`, Accept: 'application/vnd.github+json', 'User-Agent': 'satan-bot' };
-  const r = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/workflows/satan.yml/runs?per_page=20&status=in_progress`, { headers: H });
+  const r = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/workflows/satan.yml/runs?per_page=20&status=in_progress`, { headers: H, signal: AbortSignal.timeout(30_000) });
   if (!r.ok) throw new Error('lista runs ' + r.status);
   const j = await r.json();
   const meu = Number(RUN_ID);
-  const antigos = (j.workflow_runs || []).filter((x) => Number(x.id) < meu);
+  const antigos = (j.workflow_runs || []).filter((x) => x.head_branch === 'main' && Number(x.id) < meu);
   for (const x of antigos) {
-    const c = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/runs/${x.id}/cancel`, { method: 'POST', headers: H }).catch(() => null);
+    const c = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/runs/${x.id}/cancel`, { method: 'POST', headers: H, signal: AbortSignal.timeout(30_000) }).catch(() => null);
     log('TROCA_DE_GUARDA', { runAntigo: x.id, runNovo: meu, ok: !!(c && (c.ok || c.status === 202)) });
   }
 }
@@ -1807,6 +1814,7 @@ async function descobrirInicioDoJob() {
   // process.uptime() conta so o node; o npm i antes ja comeu uns minutos do job
   try {
     const r = await fetch(`https://api.github.com/repos/${GH_REPO}/actions/runs/${RUN_ID}/jobs?per_page=30`, {
+      signal: AbortSignal.timeout(30_000),
       headers: { Authorization: `token ${GH_TOK}`, Accept: 'application/vnd.github+json', 'User-Agent': 'satan-bot' },
     });
     if (!r.ok) return null;
@@ -1816,7 +1824,7 @@ async function descobrirInicioDoJob() {
   } catch { return null; }
 }
 async function tickImortal() {
-  if (relogado || !GH_TOK || !GH_REPO || !RUN_ID) return; // fora do GitHub Actions: nao faz nada
+  if (relogando || Date.now() - ultimoDispatch < 5 * 60 * 1000 || !GH_TOK || !GH_REPO || !RUN_ID) return; // fora do GitHub Actions: nao faz nada
   const inicio = await descobrirInicioDoJob().catch(() => null);
   if (inicio) jobComecouEm = inicio;
   const falta = jobComecouEm + JOB_TETO_MS - JOB_FOLGA_MS - Date.now();
@@ -1826,16 +1834,20 @@ async function tickImortal() {
     log('IMORTAL_IGNORADO', { motivo: 'job novo demais', uptimeMin: Math.round((Date.now() - jobComecouEm) / 60000) });
     return;
   }
-  relogado = true;
+  relogando = true;
   try {
     await iniciarRunSatan('teto de 6h do runner: religando antes de morrer');
-    log('IMORTAL', { acao: 'run novo disparado, este job vai ser cancelado em segundos' });
+    ultimoDispatch = Date.now();
+    log('IMORTAL', { acao: 'run solicitado; aguardando substituto conectar, nova tentativa em 5min se necessario' });
   } catch (e) {
-    relogado = false; // tenta de novo no proximo tick
     log('IMORTAL_FAIL', { err: e && e.message });
+  } finally {
+    relogando = false;
   }
 }
 setInterval(() => { tickImortal().catch(err); }, 60 * 1000);
+
+watchDiscord(client, { log });
 
 client.login(TOKEN).catch((e) => {
   err(e);
