@@ -10,8 +10,8 @@ on:
       - 'nuke_log.json'
       - 'logs_state.json'
       - 'blacklist_state.json'
-  # redeploy de seguranca a cada 5h (o job tem teto de 6h): nunca cai em cima da
-  # hora do teto, e o codigo que sobe e SEMPRE o do main — versao antiga nao volta
+  # Renovacao periodica adicional. Cron pode atrasar; watchdog.yml verifica
+  # falhas em outro runner, sem depender de uma etapa always() na maquina que caiu.
   schedule:
     - cron: '5 */5 * * *'
 # SEM concurrency/cancel-in-progress de proposito: o run novo sobe EM PARALELO e,
@@ -23,42 +23,25 @@ permissions:
   actions: write # o bot novo cancela o run antigo (troca de guarda) e dispara run novo antes do teto de 6h
 jobs:
   bot:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: bot (loop infinito; .att reinicia com o codigo novo)
         run: |
           while true; do
-            npm i --no-audit --no-fund || true
-            node bot.js || true
-            echo "[loop] bot saiu, religando em 2s..."
-            sleep 2
+            # Nao iniciar com dependencias incompletas nem esconder falha de instalacao.
+            npm i --no-audit --no-fund
+            status=0
+            node bot.js || status=$?
+            echo "[loop] $(date -u +%FT%TZ) bot saiu com codigo $status; religando em 10s..."
+            sleep 10
           done
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
-      # se o job for morto pelo teto de 6h (ou der problema no runner) e NAO houver
-      # outro run vivo, dispara outro na hora em vez de esperar o proximo cron.
-      # (cancelado pela troca de guarda = normal, tem outro bot online: nao religa)
-      - name: religa se o job foi morto pelo tempo
-        if: ${{ always() }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          set +e
-          VIVOS=$(gh api "repos/$REPO/actions/workflows/satan.yml/runs?status=in_progress&per_page=20" --jq "[.workflow_runs[] | select(.id != $RUN_ID)] | length" 2>/dev/null)
-          FILA=$(gh api "repos/$REPO/actions/workflows/satan.yml/runs?status=queued&per_page=20" --jq ".workflow_runs | length" 2>/dev/null)
-          echo "outros runs vivos: ${VIVOS:-?} | na fila: ${FILA:-?}"
-          if [ "${VIVOS:-0}" -gt 0 ] || [ "${FILA:-0}" -gt 0 ]; then
-            echo "[restart] ja tem outro bot online/subindo -> nao religa"
-            exit 0
-          fi
-          echo "[restart] nenhum outro run vivo -> disparando novo run"
-          gh workflow run satan.yml --ref main || true
