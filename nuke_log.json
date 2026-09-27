@@ -4,6 +4,48 @@
   "confDelete": "ok",
   "confCreate": "1553665121740652727",
   "anuncio": "ok",
-  "calls": [],
-  "erros": []
+  "calls": [
+    {
+      "canal": "purgatorio",
+      "apagadas": 3
+    },
+    {
+      "canal": "gf",
+      "apagadas": 0
+    },
+    {
+      "canal": "gf",
+      "apagadas": 5
+    },
+    {
+      "canal": "conclave",
+      "apagadas": 11
+    },
+    {
+      "canal": "ritual",
+      "apagadas": 7
+    },
+    {
+      "canal": "tormento",
+      "apagadas": 0
+    },
+    {
+      "canal": "sacrificio",
+      "apagadas": 2
+    },
+    {
+      "canal": "santuario",
+      "apagadas": 0
+    },
+    {
+      "canal": "apocalipse",
+      "apagadas": 0
+    },
+    {
+      "canal": "caos",
+      "apagadas": 0
+    }
+  ],
+  "erros": [],
+  "totalMsgs": 28
 }
