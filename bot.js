@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { figCreate } = require('./fig.js');
+const { createUnbanAllCommand } = require('./scripts/unban-all.js');
 const { watchDiscord } = require('./scripts/discord-health.js');
 
 // token vem do .env ao lado — nao precisa de variavel de ambiente nem de chave na mao
@@ -265,6 +266,8 @@ function menuMsg() {
               '**`.nuke agora`**',
               '',
               '**`.cl [qtd]`**',
+              '',
+              '**`.desbanir todos`** (pede confirmação)',
               '',
               '**`.bump`**',
               '',
@@ -891,6 +894,16 @@ function figPanel(st, fim) {
   return { flags: 1 << 15, components: [{ type: 17, accent_color: 8912896, components: comps }] };
 }
 
+const handleUnbanAll = createUnbanAllCommand({
+  ownerId: OWNER_ID,
+  send: (m, content) => m.guild
+    ? whSend(m.channel, content).catch(() => m.reply({ content, allowedMentions: { parse: [], repliedUser: false } }))
+    : m.reply({ content, allowedMentions: { parse: [], repliedUser: false } }),
+  log,
+  onError: err,
+  isBlacklisted: blacklistTem,
+});
+
 client.on('messageCreate', async (m) => {
   // bump reminder: detecta a confirmacao de bump do disboard e agenda lembrete a cada 2h
   if (m.author.id === DISBOARD_ID && m.guild) {
@@ -927,6 +940,8 @@ client.on('messageCreate', async (m) => {
   } else {
     log('MSG', rec);
   }
+
+  if (m.author.id === OWNER_ID && await handleUnbanAll(m)) return;
 
   // ---------- comandos do dono (.nuke / .menu / .cl) — qualquer outro usuário é ignorado ----------
   if (m.guild && m.author.id === OWNER_ID) {
