@@ -1,0 +1,37 @@
+name: satan-watchdog
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7,17,27,37,47,57 * * * *'
+  workflow_run:
+    workflows: [satan]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: satan-watchdog
+  cancel-in-progress: false
+jobs:
+  verificar:
+    # Cancelamento na troca de guarda e normal; nao deve provocar outro restart.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'workflow_run' ||
+       github.event.workflow_run.conclusion == 'failure' ||
+       github.event.workflow_run.conclusion == 'timed_out')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: verificar etapa real do bot e recuperar se necessario
+        run: node scripts/check-bot.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
