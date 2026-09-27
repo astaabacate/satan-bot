@@ -1,5 +1,27 @@
 # Recuperação do bot
 
+## Incidente de 27/09/2026 (spam não apagado)
+
+Em 27/09 entre 19:27–19:29 BRT houve flood no ・confessionario (mesma mensagem
+repetida + chuva de emojis). O bot estava no servidor e online (o nuke recriou o
+canal às 19:23 e o castigo de chuva de emojis disparou às 19:27:40 — visível no
+mute_state.json), mas nenhuma mensagem foi apagada. Causas encadeadas:
+
+- O nuke recria o confessionario a cada 1h. O código antigo calculava as
+  permissões do canal (`over`) e nunca as passava pro `channels.create` — o
+  canal renascia SEM permissões. Sem **Gerenciar Mensagens** lá, todo delete do
+  anti-flood falhava em silêncio.
+- As regras de castigo (chuva de emojis, repetir 10+ vezes, chuva de links)
+  aplicavam timeout mas não apagavam as mensagens.
+- Falha de delete e ações do anti-flood iam só pro console do runner: o canal de
+  logs nunca mostrava o bot agindo.
+
+Correções: recriação copia as permissões originais + auto-reparo (o bot garante
+as próprias permissões no canal novo e avisa o dono se algo faltar); castigo
+também apaga; chuva de emojis conta por janela de 60s (texto no meio não zera);
+5 cópias do mesmo conteúdo em 2,5min cai mesmo espaçadas; ações do anti-flood
+aparecem no canal de logs e falhas de permissão chegam na DM do dono.
+
 ## Incidente de 26/09/2026
 
 Na execução `36200231878`, a API do GitHub informou:

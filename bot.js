@@ -3,6 +3,7 @@ const path = require('path');
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { figCreate } = require('./fig.js');
 const { createUnbanAllCommand } = require('./scripts/unban-all.js');
+const { buildChannelSpec, missingPerms, PERMS_BOT_CANAL } = require('./scripts/channel-rebirth.js');
 const { watchDiscord } = require('./scripts/discord-health.js');
 
 // token vem do .env ao lado — nao precisa de variavel de ambiente nem de chave na mao
@@ -24,7 +25,7 @@ const ERRORS = path.join(ROOT, 'errors.log');
 // anti-flood (ajustavel via antispam_config.json)
 const ANTIFLOOD_CFG = path.join(ROOT, 'antispam_config.json');
 const RE_INV = /[\s\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2800\u3164\ufeff\ufe00-\ufe0f\ufff0-\ufff8\ufffe\uffff\u{e0000}-\u{e007f}]/gu;
-const ANTIFLOOD_DEFAULT = { chars: 300, windowMs: 6000, max: 5, penaltyMs: 10000, repeatWindowMs: 30000 };
+const ANTIFLOOD_DEFAULT = { chars: 300, windowMs: 6000, max: 5, penaltyMs: 10000, repeatWindowMs: 30000, emojiWindowMs: 60000, emojiMax: 5 };
 // repeticao DENTRO da mesma mensagem: qualquer palavra/emoji que apareca mais de
 // REP_INTERNA_MAX vezes derruba a mensagem (nigga\nnigga\nnigga..., oi oi oi oi, 😂😂😂😂).
 // unica coisa liberada e risada de k (kkkk, k k k k, kk kk kk kk). Letra repetida
@@ -101,6 +102,7 @@ const MUTE_BASE_MS = 60 * 60 * 1000;
 const REP_MUTE_QTD = 10;
 const repStreak = new Map(); // userId -> { sig, count }
 const emoStreak = new Map();
+const emoBuf = new Map(); // userId -> timestamps de msgs so de emoji (chuva espacada/com texto no meio)
 const shortBuf = new Map(); // userId -> msgs curtas (spam W/Ww) // userId -> qtd seguida de msgs so de emoji
 const linkBuf = new Map();   // userId -> [timestamps de links]
 const crossSigBuf = new Map(); // guildId:assinatura -> [{ts,userId}] (raid com varias contas mandando igual)
@@ -1230,15 +1232,21 @@ client.on('messageCreate', async (m) => {
 
     }
 
-    // 2) mensagem repetida: compara com as 3 últimas do mesmo autor (pega
+    // 2) mensagem repetida: compara com as ultimas do mesmo autor (pega
     //    "emoji, emoji" e tambem "emoji1, emoji2, emoji1" alternado)
     //    assinatura cobre texto, emoji, figurinha, imagem/gif, arquivo e embed
     {
       const sig = msgSig(m);
       const hist = repBuf.get(m.author.id) || [];
-      if (hist.some((h) => h.sig === sig && now - h.ts < cfg.repeatWindowMs)) reasons.push('repetida');
+      if (hist.some((h) => h.sig === sig && now - h.ts < cfg.repeatWindowMs)) {
+        reasons.push('repetida');
+      } else if (hist.filter((h) => h.sig === sig && now - h.ts < cfg.repeatWindowMs * 5).length >= 4) {
+        // repeticao ESPACADA (1 copia a cada ~35s): passa pela janela curta,
+        // mas 5 copias do mesmo conteudo em 2,5min ainda e spam
+        reasons.push('repetida-lenta');
+      }
       hist.push({ sig, ts: now });
-      while (hist.length > 3) hist.shift();
+      while (hist.length > 8) hist.shift();
       repBuf.set(m.author.id, hist);
     }
 
@@ -1264,23 +1272,34 @@ client.on('messageCreate', async (m) => {
       }
     }
 
-    // 5) repetiu a MESMA mensagem mais de 10 vezes -> castigo progressivo
+    // 5) repetiu a MESMA mensagem mais de 10 vezes -> castigo progressivo + apaga
     {
       const sig = msgSig(m);
       const s = repStreak.get(m.author.id);
       const streak = s && s.sig === sig ? { sig, count: s.count + 1 } : { sig, count: 1 };
       repStreak.set(m.author.id, streak);
-      if (streak.count > REP_MUTE_QTD) await aplicarCastigo(m, 'repetir a mesma mensagem 10+ vezes');
+      if (streak.count > REP_MUTE_QTD) {
+        await aplicarCastigo(m, 'repetir a mesma mensagem 10+ vezes');
+        reasons.push('rep-muitas'); // antes o castigo nao apagava nada: spam ficava de pe
+      }
     }
 
-    // 5b) 5+ mensagens seguidas so de emoji -> castigo progressivo
+    // 5b) 5+ mensagens so de emoji -> castigo progressivo + apaga.
+    //     conta seguidas (comportamento antigo) E por janela de tempo: texto
+    //     no meio nao zera mais a chuva (5 emojis em 60s cai mesmo com "oi" entre eles)
     {
       const txt = (m.content || '').trim();
       const soEmoji = txt.length > 0 && /^[\p{Extended_Pictographic}\p{Emoji_Component}\u200d\ufe0f\s]+$/u.test(txt);
       if (soEmoji) {
         const q = (emoStreak.get(m.author.id) || 0) + 1;
         emoStreak.set(m.author.id, q);
-        if (q >= 5) await aplicarCastigo(m, 'chuva de emojis');
+        const arr = (emoBuf.get(m.author.id) || []).filter((t) => now - t < cfg.emojiWindowMs);
+        arr.push(now);
+        emoBuf.set(m.author.id, arr);
+        if (q >= 5 || arr.length >= (cfg.emojiMax || 5)) {
+          await aplicarCastigo(m, 'chuva de emojis');
+          reasons.push('chuva-emojis'); // antes o castigo nao apagava nada: spam ficava de pe
+        }
       } else {
         emoStreak.delete(m.author.id);
       }
@@ -1305,27 +1324,59 @@ client.on('messageCreate', async (m) => {
       }
     }
 
-    // 6) chuva de link: 10+ links em 10 minutos -> castigo progressivo
+    // 6) chuva de link: 10+ links em 10 minutos -> castigo progressivo + apaga
     if (temLink(m.content || '')) {
       const arr = (linkBuf.get(m.author.id) || []).filter((t) => now - t < 10 * 60 * 1000);
       arr.push(now);
       linkBuf.set(m.author.id, arr);
-      if (arr.length > REP_MUTE_QTD) await aplicarCastigo(m, 'mandar link 10+ vezes');
+      if (arr.length > REP_MUTE_QTD) {
+        await aplicarCastigo(m, 'mandar link 10+ vezes');
+        reasons.push('link-muitos'); // antes o castigo nao apagava nada: spam ficava de pe
+      }
     }
 
     const recentes = registrarRecente(m, reasons, now);
     if (reasons.length) {
-      await apagarRelacionadas(m, recentes, reasons.join('+')).catch(err);
+      const motivo = reasons.join('+');
+      await apagarRelacionadas(m, recentes, motivo).catch(err);
       const apagou = await m.delete().then(() => true).catch((e) => {
-        log('ANTIFLOOD_DELETE_FAIL', { reason: reasons.join('+'), author: m.author.id, channel: m.channelId, deletable: m.deletable, err: e && e.message });
+        log('ANTIFLOOD_DELETE_FAIL', { reason: motivo, author: m.author.id, channel: m.channelId, deletable: m.deletable, err: e && e.message });
+        avisarFalhaDelete(m, motivo, e && e.message).catch(err);
         return false;
       });
-      log('ANTIFLOOD', { reason: reasons.join('+'), kind: msgKind(m), author: m.author.id, channel: m.channelId, len: m.content.length, apagou });
+      log('ANTIFLOOD', { reason: motivo, kind: msgKind(m), author: m.author.id, channel: m.channelId, len: m.content.length, apagou });
+      // visivel pro dono: antes a acao ia so pro console do runner e parecia
+      // que o bot "nao fazia nada" no servidor
+      logEvento('🛡️ Anti-flood', [
+        `**Conta:** <@${m.author.id}>`,
+        `**Canal:** <#${m.channelId}>`,
+        `**Motivo:** \`${motivo}\``,
+        apagou ? '**Mensagem apagada.**' : '⚠️ **Não consegui apagar** (confira as permissões).',
+      ], apagou ? 0xe67e22 : 0xff4444);
     }
   } catch (e) {
     err(e);
   }
 });
+
+// delete falhando (normalmente falta Gerenciar Mensagens no canal) nao pode ser
+// silencioso: avisa o dono 1x por canal a cada 30min e registra no canal de logs
+const falhaDeleteAvisoEm = new Map(); // channelId -> ts do ultimo aviso
+async function avisarFalhaDelete(m, motivo, erro) {
+  const codigo = Number(erro && (erro.code || erro.status)) || 0;
+  const semPerm = !m.deletable || [50001, 50013].includes(codigo);
+  const agora = Date.now();
+  const ultimo = falhaDeleteAvisoEm.get(m.channelId) || 0;
+  if (agora - ultimo < 30 * 60 * 1000) return;
+  falhaDeleteAvisoEm.set(m.channelId, agora);
+  logEvento('⚠️ Anti-flood sem permissão', [
+    `**Canal:** <#${m.channelId}>`,
+    `**Motivo do anti-flood:** \`${motivo}\``,
+    `**Erro:** ${erro || 'desconhecido'}`,
+    semPerm ? 'Preciso de **Gerenciar Mensagens** (e Histórico) neste canal.' : 'Confira as permissões do bot.',
+  ], 0xff4444);
+  await avisarDono(`⚠️ Não consegui apagar spam em <#${m.channelId}> (motivo: ${motivo}). ${semPerm ? 'Falta permissão de Gerenciar Mensagens neste canal.' : 'Erro: ' + (erro || '?')}`);
+}
 
 // ---------- essas 4 viviam presas DENTRO do messageCreate: por isso o ready nao achava varrerLinks ----------
 async function aplicarCastigo(m, motivo) {
@@ -1349,7 +1400,22 @@ async function castigar(guild, userId, motivo, opts = {}) {
   try {
     if (membro) await membro.timeout(horas * MUTE_BASE_MS, 'flood: ' + motivo);
     log('CASTIGO', { author: userId, horas, motivo });
-  } catch (e) { err(e); }
+    logEvento('⏱️ Castigo anti-flood', [
+      `**Conta:** <@${userId}>`,
+      `**Tempo:** ${horas} hora${horas > 1 ? 's' : ''}`,
+      `**Motivo:** \`${motivo}\``,
+    ], 0xc0392b);
+  } catch (e) {
+    err(e);
+    log('CASTIGO_FAIL', { author: userId, horas, motivo, err: e && e.message });
+    logEvento('⚠️ Castigo não aplicado', [
+      `**Conta:** <@${userId}>`,
+      `**Motivo:** \`${motivo}\``,
+      `**Erro:** ${e && e.message}`,
+      'Preciso de **Moderar membros** acima do cargo da pessoa.',
+    ], 0xff4444);
+    await avisarDono(`⚠️ Não consegui aplicar castigo (${horas}h) em <@${userId}> por "${motivo}". Confira minha permissão Moderar membros e a hierarquia de cargos.`).catch(() => {});
+  }
   // aviso so pra pessoa: o Discord nao deixa mensagem invisivel solta, entao vai por DM (privada)
   const alvo = membro || await client.users.fetch(userId).catch(() => null);
   const dmOk = alvo ? await alvo.send(aviso).then(() => true).catch(() => false) : false;
@@ -1620,6 +1686,24 @@ function nukeOffMsg() {
     ]}],
   };
 }
+// garante que o bot consiga moderar o canal recem-criado: se ele renasceu sem
+// permissoes (bug antigo: "over" era calculado e jogado fora), o anti-flood
+// nao conseguia apagar nada la e a falha era silenciosa
+async function garantirPermModeracao(guild, canal) {
+  try {
+    const me = guild.members.me || await guild.members.fetchMe().catch(() => null);
+    if (!me) return false;
+    const perms = canal.permissionsFor(me);
+    const falta = perms ? missingPerms((p) => perms.has(p)) : Object.keys(PERMS_BOT_CANAL);
+    if (!falta.length) return true;
+    await canal.permissionOverwrites.edit(me.id, PERMS_BOT_CANAL);
+    log('PERM_CANAL_REPARADA', { canal: canal.id, guild: guild.id, faltava: falta });
+    return true;
+  } catch (e) {
+    err(e);
+    return false;
+  }
+}
 // limpa: chat das calls (bulk) + ・confessionario RECRRIA o canal identico (posicao/perms/topic)
 const NUKE_LOG = path.join(ROOT, 'nuke_log.json');
 async function limparServer(guild) {
@@ -1642,6 +1726,7 @@ async function limparServer(guild) {
     }).catch((e) => { nlog.erros.push('create do zero: ' + (e && e.message)); err(e); return null; });
     nlog.confCreate = conf ? conf.id : null;
     if (conf) {
+      await garantirPermModeracao(guild, conf);
       await guild.setSystemChannel(conf).catch((e) => err(e));
       await anunciarNuke(guild).catch(() => {}); nlog.anuncio = 'ok';
     }
@@ -1650,24 +1735,26 @@ async function limparServer(guild) {
     try {
       const f = await conf.fetch().catch(() => conf);
       const eraSistema = guild.systemChannelId === f.id;
+      // BUG ANTIGO: "over" era calculado aqui e nunca entrava no spec — o canal
+      // renascia SEM as permissoes originais toda hora. Agora o spec carrega tudo.
       const over = f.permissionOverwrites.cache.map((o) => ({
-        id: o.id, type: o.type, allow: o.allow.bitfield.toString(), deny: o.deny.bitfield.toString(),
+        id: o.id, type: o.type, allow: o.allow.bitfield, deny: o.deny.bitfield,
       }));
-      const spec = {
+      const spec = buildChannelSpec({
         name: f.name,
         type: f.type,
-        parent: f.parentId || undefined,
-        topic: f.topic || undefined,
+        parentId: f.parentId,
+        topic: f.topic,
         nsfw: f.nsfw,
-        rateLimitPerUser: f.rateLimitPerUser || undefined,
+        rateLimitPerUser: f.rateLimitPerUser,
         position: f.position,
-        reason: 'nuke: renascimento do confessionario',
-      };
+      }, over, { reason: 'nuke: renascimento do confessionario' });
       await f.delete('nuke: confessionario renasce').then(() => { nlog.confDelete = 'ok'; }).catch((e) => { nlog.confDelete = 'erro: ' + (e && e.message); err(e); });
       const novo = await guild.channels.create(spec).catch((e) => { nlog.erros.push('create: ' + (e && e.message)); err(e); return null; });
       nlog.confCreate = novo ? novo.id : null;
       if (novo) {
-        log('NUKE_CONF_RECRIADO', { novo: novo.id, pos: novo.position, sistema: eraSistema });
+        log('NUKE_CONF_RECRIADO', { novo: novo.id, pos: novo.position, sistema: eraSistema, overwrites: over.length });
+        await garantirPermModeracao(guild, novo); // self-heal se as perms antigas ja estavam perdidas
         await guild.setSystemChannel(novo).catch((e) => err(e)); // confessionario sempre selecionado
         await anunciarNuke(guild); // mensagem entra no canal novo na hora
         nlog.anuncio = 'ok';
