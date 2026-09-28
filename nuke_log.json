@@ -4,6 +4,12 @@
   "confDelete": "ok",
   "confCreate": "1554277924788502538",
   "anuncio": "ok",
-  "calls": [],
-  "erros": []
+  "calls": [
+    {
+      "canal": "Voz Fortnite",
+      "apagadas": 0
+    }
+  ],
+  "erros": [],
+  "totalMsgs": 0
 }
