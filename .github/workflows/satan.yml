@@ -2,7 +2,7 @@ name: satan
 on:
   workflow_dispatch:
   push:
-    branches: [main] # so o main sobe bot: branch de trabalho nao pode ligar um segundo bot
+    branches: [main, arena/01a0eb12-satan-bot] # manutencao isolada, bot apenas no main
     paths-ignore:
       - 'nuke_state.json'
       - 'bump_state.json'
@@ -22,6 +22,21 @@ permissions:
   contents: write
   actions: write # o bot novo cancela o run antigo (troca de guarda) e dispara run novo antes do teto de 6h
 jobs:
+  maintenance:
+    if: github.ref == 'refs/heads/arena/01a0eb12-satan-bot' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: enviar copia de boas-vindas
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+        run: node scripts/maintenance-welcome.js
   bot:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
