@@ -9,6 +9,7 @@ const { rebuildServer } = require('./scripts/rebuild-server.js');
 const { configurarServidor } = require('./scripts/setup-servidor.js');
 const { classificarDenuncia } = require('./scripts/filtro-denuncia.js');
 const { watchDiscord } = require('./scripts/discord-health.js');
+const { corridaComTimeout, ehErroDeAutenticacao, TIMEOUT_CODE, CODIGO_LOGIN_TRAVADO, CODIGO_TOKEN_INVALIDO } = require('./scripts/login-guard.js');
 
 // token vem do .env ao lado — nao precisa de variavel de ambiente nem de chave na mao
 if (!process.env.DISCORD_TOKEN) {
@@ -2109,7 +2110,19 @@ setInterval(() => { tickImortal().catch(err); }, 60 * 1000);
 
 watchDiscord(client, { log });
 
-client.login(TOKEN).catch((e) => {
+// login com teto de tempo: sem isso o processo pode ficar VIVO com o REST sem
+// token (intervalos rodando, nada respondido, nem apagado) — foi assim no
+// incidente de 29/09, com o token resetado no Developer Portal.
+const LOGIN_TIMEOUT_MS = 120 * 1000;
+corridaComTimeout(client.login(TOKEN), LOGIN_TIMEOUT_MS).catch((e) => {
   err(e);
+  if (e && e.code === TIMEOUT_CODE) {
+    console.error('FATAL LOGIN_TRAVADO: o login nao resolveu em 2min; saindo para o loop religar limpo (processo sem token nao modera nada).');
+    process.exit(CODIGO_LOGIN_TRAVADO);
+  }
+  if (ehErroDeAutenticacao(e)) {
+    console.error('FATAL TOKEN_INVALIDO: o DISCORD_TOKEN do secret nao autentica mais (TokenInvalid/401). Copie o token atual em discord.com/developers/applications > Bot > Reset Token e cole em Settings > Secrets and variables > Actions > DISCORD_TOKEN. Enquanto isso o bot nao tem como subir: o workflow vai parar de tentar em vez de ficar em loop.');
+    process.exit(CODIGO_TOKEN_INVALIDO);
+  }
   process.exit(1);
 });

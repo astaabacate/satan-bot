@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { checkBot, runIsUsable, BOT_STEP } = require('../scripts/check-bot');
+const { checkBot, runIsUsable, tokenDiscordValido, BOT_STEP } = require('../scripts/check-bot');
 const { watchDiscord } = require('../scripts/discord-health');
 const now = Date.parse('2026-09-26T04:32:00Z');
 const run = (status = 'in_progress', minutes = 60) => ({
@@ -71,6 +71,19 @@ test('erro na API interrompe verificacao, nao dispara as cegas', async () => {
   }, now), /HTTP 403/);
   assert.equal(posts, 0);
 });
+test('token do Discord morto (401/403) impede religar o bot', async () => {
+  assert.equal(await tokenDiscordValido('token', async () => ({ status: 401 })), false);
+  assert.equal(await tokenDiscordValido('token', async () => ({ status: 403 })), false);
+  assert.equal(await tokenDiscordValido('', async () => ({ status: 200 })), false);
+});
+
+test('consulta que falha por rede nao e tratada como token invalido', async () => {
+  assert.equal(await tokenDiscordValido('token', async () => { throw new Error('ECONNRESET'); }), true);
+  assert.equal(await tokenDiscordValido('token', async () => ({ status: 429 })), true);
+  assert.equal(await tokenDiscordValido('token', async () => ({ status: 500 })), true);
+  assert.equal(await tokenDiscordValido('token', async () => ({ status: 200 })), true);
+});
+
 test('Discord tem tolerancia para reconectar e reinicia se ficar offline', () => {
   let time = 0, ready = false, tick, destroyed = 0;
   const exits = [], logs = [];

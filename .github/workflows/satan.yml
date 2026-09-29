@@ -28,17 +28,95 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
+      - name: conferir o token do Discord ANTES de subir
+        # Incidente de 29/09/2026: o token do secret foi resetado no Developer
+        # Portal, o bot nao autenticava e ninguem via — o passo ficava
+        # "in_progress" para sempre (laco de religar) e o watchdog tratava isso
+        # como bot vivo. Falhar aqui, em segundos e com a causa escrita, e o que
+        # evita repetir a mesma noite de silencio.
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          GH: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ATUAL: ${{ github.run_id }}
+        run: |
+          if [ -z "${DISCORD_TOKEN:-}" ]; then
+            echo "::error title=DISCORD_TOKEN vazio::o secret DISCORD_TOKEN esta vazio. Configure em Settings > Secrets and variables > Actions > DISCORD_TOKEN com o token do bot."
+            exit 1
+          fi
+          code=$(curl -s -o /tmp/me.json -w '%{http_code}' -m 25 -H "Authorization: Bot $DISCORD_TOKEN" https://discord.com/api/v10/users/@me) || code=000
+          if [ "$code" = "200" ]; then
+            quem=$(node -e "try{const u=JSON.parse(require('fs').readFileSync('/tmp/me.json','utf8'));console.log(u.username+' ('+u.id+')')}catch(e){console.log('?')}")
+            echo "::notice title=token ok::DISCORD_TOKEN valido: $quem"
+            exit 0
+          fi
+          if [ "$code" != "401" ] && [ "$code" != "403" ]; then
+            echo "::warning title=Discord nao respondeu::HTTP $code ao conferir o token; seguindo mesmo assim (pode ser indisponibilidade do Discord ou da rede do runner)."
+            exit 0
+          fi
+          echo "::error title=DISCORD_TOKEN invalido (HTTP $code)::o token do secret nao autentica mais - normalmente porque foi resetado no Developer Portal (Reset Token) e o secret ficou com o valor antigo. Abra discord.com/developers/applications > seu app > Bot > Reset Token, copie o token novo e cole em Settings > Secrets and variables > Actions > DISCORD_TOKEN. Depois rode este workflow de novo (o watchdog religa sozinho em ate 10min quando o token voltar)."
+          if [ "$code" = "401" ]; then
+            # Run zumbi deste mesmo tipo (passo "in_progress" para sempre) segura
+            # o watchdog: ele acha que existe bot vivo e nao religa depois que o
+            # secret for corrigido. Cancela os antigos para a recuperacao voltar
+            # a funcionar. Nada de saudavel se perde: com token 401 ninguem
+            # consegue estar logado.
+            lista=$(curl -s -m 20 -H "Authorization: Bearer $GH" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/actions/workflows/satan.yml/runs?status=in_progress&per_page=20" || true)
+            for id in $(node -e "try{console.log((JSON.parse(process.argv[1]).workflow_runs||[]).map(r=>r.id).join(' '))}catch(e){}" "$lista"); do
+              if [ "$id" != "$RUN_ATUAL" ]; then
+                curl -s -o /dev/null -m 20 -X POST -H "Authorization: Bearer $GH" -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/$REPO/actions/runs/$id/cancel" || true
+                echo "run antigo $id cancelado (estava preso com token morto)"
+              fi
+            done
+          fi
+          exit 1
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: bot (loop infinito; .att reinicia com o codigo novo)
         run: |
+          falhas_seguidas=0
+          travados=0
           while true; do
             # Nao iniciar com dependencias incompletas nem esconder falha de instalacao.
             npm i --no-audit --no-fund
             status=0
+            comecou=$(date +%s)
             node bot.js || status=$?
-            echo "[loop] $(date -u +%FT%TZ) bot saiu com codigo $status; religando em 10s..."
+            durou=$(( $(date +%s) - comecou ))
+            # 78 = token nao autentica (scripts/login-guard.js): nao existe religar
+            # que resolva, o dono precisa trocar o secret. Falha o run de proposito
+            # para aparecer vermelho no Actions e o watchdog nao ficar disparando.
+            if [ "$status" -eq 78 ]; then
+              echo "::error title=DISCORD_TOKEN invalido no boot::o bot subiu e nao autenticou. Atualize o secret DISCORD_TOKEN com o token atual do Developer Portal e rode o workflow de novo."
+              exit 1
+            fi
+            # 76 = login nao resolveu no teto de tempo (nao e erro do dono):
+            # religa, mas nao para sempre — senao vira run zumbi de novo.
+            if [ "$status" -eq 76 ]; then
+              travados=$((travados + 1))
+              if [ "$travados" -ge 3 ]; then
+                echo "::error title=login travado::3 tentativas seguidas de login que nunca resolveram. Veja o log acima (rede do runner ate o Discord / token)."
+                exit 1
+              fi
+            else
+              travados=0
+            fi
+            if [ "$status" -ne 0 ] && [ "$durou" -lt 60 ]; then
+              falhas_seguidas=$((falhas_seguidas + 1))
+            else
+              falhas_seguidas=0
+            fi
+            # Zumbi: passo "in_progress" com o bot morrendo e voltando a cada 10s
+            # parece bot vivo para o watchdog. Cinco mortes rapidas seguidas =
+            # falha visivel em vez de silencio.
+            if [ "$falhas_seguidas" -ge 5 ]; then
+              echo "::error title=bot nao sobe::5 tentativas seguidas falharam em menos de 1 minuto (ultimo codigo $status). Veja as tentativas acima."
+              exit 1
+            fi
+            echo "[loop] $(date -u +%FT%TZ) bot saiu com codigo $status (durou ${durou}s); religando em 10s..."
             sleep 10
           done
         env:

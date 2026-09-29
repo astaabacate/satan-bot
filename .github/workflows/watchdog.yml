@@ -35,3 +35,6 @@ jobs:
         run: node scripts/check-bot.js
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # usado so para nao disparar substituto quando o token do Discord esta
+          # morto (401/403): nesse caso o problema e o secret, nao o runner.
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}

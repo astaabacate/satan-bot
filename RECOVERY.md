@@ -1,5 +1,43 @@
 # Recuperação do bot
 
+## Incidente de 29/09/2026 (token do secret inválido — bot mudo)
+
+Entre ~23:45 UTC de 28/09 e 01:47 UTC de 29/09 o nuke horário passou a falhar
+com `Expected token to be set for this request, but none was present` (visível no
+`nuke_log.json` versionado): o processo estava vivo, mas sem token no REST.
+O `DISCORD_TOKEN` do secret respondia **HTTP 401** — o token foi resetado no
+Developer Portal (Reset Token invalida o anterior) e o secret continuou com o
+valor antigo. Nenhum comando respondia porque não havia login nenhum.
+
+Por que ninguém foi avisado (o problema de verdade):
+
+- O passo do workflow é um `while true` que religa o bot a cada 10s. Com token
+  morto, ele fica nesse laço para sempre e o passo continua `in_progress`.
+- `scripts/check-bot.js` usa o status do passo como prova de vida: passo
+  `in_progress` = "execução ativa" = não dispara recuperação e não avisa ninguém.
+- O laço de reinício também pode virar zumbi: processo vivo com os intervalos
+  rodando e sem token (`client.destroy()`, chamado no caminho de falha do
+  `login`, zera o token do REST) — on-line no Actions, mudo no Discord.
+
+Correções: o workflow confere o token **antes** de subir o bot e falha em
+segundos com a causa escrita (`::error`); `scripts/login-guard.js` reconhece
+erro de autenticação e o bot sai com código 78 (o laço para e o run falha, em vez
+de tentar para sempre) e põe teto de tempo no login (processo não vira zumbi);
+o laço também para depois de 5 falhas rápidas seguidas; o watchdog consulta o
+token no Discord e **não** dispara substituto quando é 401/403 (o problema é o
+secret, não o runner).
+
+Procedimento quando o Actions mostrar `DISCORD_TOKEN inválido`:
+
+1. Abra `https://discord.com/developers/applications` → seu app → **Bot**.
+2. Se o token atual não estiver à mão, **Reset Token** e copie o novo.
+3. No GitHub: **Settings → Secrets and variables → Actions → DISCORD_TOKEN → Update
+   secret**, cole e salve.
+4. **Actions → satan → Run workflow → main** (ou dê push no main). Confirmar
+   `[READY]` no log e testar um comando no Discord.
+5. Nunca colar o token no código, em issue, em chat ou em arquivo do repositório
+   (ele é público): só no secret. Token que vazou deve ser resetado.
+
 ## Incidente de 27/09/2026 (spam não apagado)
 
 Em 27/09 entre 19:27–19:29 BRT houve flood no ・confessionario (mesma mensagem
@@ -56,9 +94,20 @@ confunde uma execução fantasma com um bot vivo.
   o substituto não assumir. Requisições de gerenciamento têm timeout.
 - Falhas de instalação não são mais ignoradas. Código de saída e eventos de
   desconexão aparecem no log.
+- Antes de subir o bot, o workflow confere o token no Discord (`GET /users/@me`):
+  401/403 falha o job em segundos, com a causa e o caminho do secret escritos na
+  aba de anotações; erro de rede/instabilidade só gera aviso.
+- O laço de reinício para quando o bot sai com o código 78 (token não autentica)
+  e depois de cinco falhas rápidas seguidas — falha visível em vez de laço mudo.
+- O login tem teto de dois minutos: se nunca resolver, o processo sai em vez de
+  ficar vivo com o REST sem token.
+- O watchdog consulta o token antes de pedir substituto: com 401/403 ele não
+  reinicia (reinício não conserta secret) e diz isso no log.
 
 A verificação externa mede a execução da etapa, não prova respostas aos comandos.
 O monitor local cobre perda de conexão; não cobre todo tipo de travamento.
+Um passo em `in_progress` pode ser bot mudo em laço de reinício — o token é
+conferido no início do run justamente para separar esses casos.
 Cron do GitHub pode atrasar, e indisponibilidade geral de Actions, falta de
 minutos ou bloqueio da API também impede recuperação. Não é garantia de uptime.
 Para serviço 24/7, prefira um host permanente com supervisor e monitor externo.
@@ -84,4 +133,6 @@ retornou 403; não houve confirmação de recuperação em produção.
 
 `npm test` executa testes locais sem Discord, rede ou secrets. Inclui a regressão
 do run fantasma, filas travadas, tolerância de boot, limitação de reinícios,
-erros de API e reconexão do Discord. `node --check bot.js` valida sintaxe.
+erros de API, reconexão do Discord, classificação de erro de autenticação
+(`test/login-guard.test.js`) e a consulta de token do watchdog. `node --check bot.js`
+valida sintaxe.
