@@ -73,6 +73,23 @@ function parsearCallLimite(texto) {
   return { plano, erros };
 }
 
+// modo escada: a PRIMEIRA call fica sem limite e as outras sobem de 1 em 1
+// conforme descem na lista (gf=2, conclave=3, ritual=4...) — é a regra do inferno
+function ehEscada(texto) { return /^escada\b/i.test(String(texto || '').trim()); }
+
+function posicaoOrdenavel(c) {
+  if (typeof c.rawPosition === 'number') return c.rawPosition;
+  return (c && c.position) || 0;
+}
+
+// '.call limite escada' (comeca em 2) ou '.call limite escada 5'
+function planoEscada(guild, { inicio = 2 } = {}) {
+  const ini = normalizarLimite(inicio) ?? 2;
+  const vozes = [...canaisDeVoz(guild)].sort((a, b) => posicaoOrdenavel(a) - posicaoOrdenavel(b)
+    || String(a.id).localeCompare(String(b.id)));
+  return vozes.map((c, i) => ({ nome: c.name, limite: i === 0 ? 0 : Math.min(LIMITE_MAX, ini + i - 1) }));
+}
+
 // aplica um plano inteiro (cada call com o seu limite)
 async function aplicarLimitesVoz(guild, plano, { log = () => {}, motivo = 'limite de pessoas nas calls' } = {}) {
   const rel = { aplicados: [], pulados: [], erros: [] };
@@ -86,5 +103,6 @@ async function aplicarLimitesVoz(guild, plano, { log = () => {}, motivo = 'limit
 }
 
 module.exports = {
-  aplicarLimiteVoz, aplicarLimitesVoz, canaisDeVoz, normalizarLimite, parsearCallLimite, LIMITE_MAX,
+  aplicarLimiteVoz, aplicarLimitesVoz, canaisDeVoz, normalizarLimite, parsearCallLimite,
+  planoEscada, ehEscada, LIMITE_MAX,
 };

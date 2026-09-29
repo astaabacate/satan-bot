@@ -6,7 +6,7 @@ const { createUnbanAllCommand } = require('./scripts/unban-all.js');
 const { buildChannelSpec, missingPerms, PERMS_BOT_CANAL } = require('./scripts/channel-rebirth.js');
 const { garantirOrdemInferno, irmaosOrdenados, posicaoDoConfessionario } = require('./scripts/channel-order.js');
 const { restaurarCanais } = require('./scripts/restaurar-canais.js');
-const { aplicarLimitesVoz, parsearCallLimite } = require('./scripts/call-limite.js');
+const { aplicarLimitesVoz, parsearCallLimite, planoEscada, ehEscada } = require('./scripts/call-limite.js');
 const { snapshotGuild } = require('./scripts/server-snapshot.js');
 const { rebuildServer } = require('./scripts/rebuild-server.js');
 const { configurarServidor } = require('./scripts/setup-servidor.js');
@@ -1184,18 +1184,24 @@ client.on('messageCreate', async (m) => {
     if (c === '.call' || c.startsWith('.call ')) {
       await m.delete().catch(() => {});
       const args = c.match(/^.call\s+limite\s*(.*)$/);
-      const parsed = args ? parsearCallLimite(args[1]) : { plano: [], erros: [] };
-      if (!args || !String(args[1] || '').trim() || parsed.erros.length) {
+      const texto = args ? String(args[1] || '').trim() : '';
+      // 'escada' = a regra do inferno: 1a call sem limite, o resto 2, 3, 4...
+      const parsed = ehEscada(texto) ? { plano: [], erros: [] } : parsearCallLimite(texto);
+      if (!args || !texto || (!ehEscada(texto) && parsed.erros.length)) {
         await whSend(m.channel, [
           parsed.erros.length ? '⚠️ ' + parsed.erros.join(' | ') : '',
           '**`.call limite 99`** — bota o limite em todas as calls.',
           '**`.call limite 99 gf caos`** — só nessas.',
           '**`.call limite gf=2 caos=10 purgatorio=99`** — cada uma com o seu.',
+          '**`.call limite escada`** — 1ª sem limite, o resto 2, 3, 4... (`.call limite escada 5` começa em 5).',
           '**`.call limite 0`** — volta pro sem limite.',
         ].filter(Boolean).join('\n')).catch(() => {});
         return;
       }
-      const r = await aplicarLimitesVoz(m.guild, parsed.plano, { log })
+      const plano = ehEscada(texto)
+        ? planoEscada(m.guild, { inicio: (texto.match(/^escada\s+(\d{1,3})$/) || [])[1] || 2 })
+        : parsed.plano;
+      const r = await aplicarLimitesVoz(m.guild, plano, { log })
         .catch((e) => { err(e); return { aplicados: [], pulados: [], erros: [String(e && e.message)] }; });
       const fmt = (n) => (n === 0 ? 'sem limite' : n + ' pessoas');
       const txt = (r.erros.length && !r.aplicados.length)

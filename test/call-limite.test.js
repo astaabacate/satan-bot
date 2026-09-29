@@ -151,3 +151,40 @@ test('aplicarLimitesVoz: call que ja esta no limite pedido vai pra pulados', asy
   assert.deepEqual(rel.pulados, ['caos']);
   assert.equal(g.channels.cache.get('v3').edits.length, 0); // zero requisição
 });
+
+// ---------- modo escada: 1a ilimitada, o resto sobe de 1 em 1 ----------
+const { planoEscada, ehEscada } = require('../scripts/call-limite');
+
+function guildOrdenado() {
+  // mesma ordem do servidor: purgatorio, gf, conclave, ritual, tormento...
+  const nomes = ['purgatorio', 'gf', 'conclave', 'ritual', 'tormento', 'sacrificio', 'santuario', 'apocalipse', 'caos'];
+  const canais = nomes.map((name, i) => ({ id: 'v' + i, name, type: 2, userLimit: 0, position: i, rawPosition: i }));
+  return fakeGuild(canais);
+}
+
+test('ehEscada reconhece o modo e ignora o resto', () => {
+  assert.equal(ehEscada('escada'), true);
+  assert.equal(ehEscada('escada 5'), true);
+  assert.equal(ehEscada('99'), false);
+  assert.equal(ehEscada(''), false);
+});
+
+test('planoEscada: purgatorio sem limite e o resto 2,3,4... ate 9', () => {
+  const plano = planoEscada(guildOrdenado());
+  assert.deepEqual(plano.map((p) => `${p.nome}=${p.limite}`), [
+    'purgatorio=0', 'gf=2', 'conclave=3', 'ritual=4', 'tormento=5',
+    'sacrificio=6', 'santuario=7', 'apocalipse=8', 'caos=9',
+  ]);
+});
+
+test('planoEscada: da pra comecar em outro numero (escada 5)', () => {
+  const plano = planoEscada(guildOrdenado(), { inicio: 5 });
+  assert.deepEqual(plano.slice(0, 3).map((p) => `${p.nome}=${p.limite}`), ['purgatorio=0', 'gf=5', 'conclave=6']);
+});
+
+test('planoEscada + aplicarLimitesVoz: a escada vai pro servidor inteiro', async () => {
+  const g = guildOrdenado();
+  const rel = await aplicarLimitesVoz(g, planoEscada(g));
+  assert.equal(rel.erros.length, 0);
+  assert.deepEqual([...g.channels.cache.values()].map((c) => c.userLimit), [0, 2, 3, 4, 5, 6, 7, 8, 9]);
+});

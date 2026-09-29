@@ -87,12 +87,21 @@ de estrutura. Cópia com data em `backups/` serve de segurança.
 Limite de pessoas por call (o restore copia o `userLimit` do backup; `0` =
 sem limite):
 
+A regra do inferno é a **escada**: a primeira call (`purgatorio`) fica sem limite
+e as outras sobem de 1 em 1 conforme descem na lista — `gf` 2, `conclave` 3,
+`ritual` 4, `tormento` 5, `sacrificio` 6, `santuario` 7, `apocalipse` 8, `caos` 9.
+
 ```text
-.call limite 99                             # todas as calls
-.call limite 99 gf caos                     # só essas duas
-.call limite gf=2 caos=10 purgatorio=99     # cada call com o seu
-.call limite 0                              # volta pro sem limite
+.call limite escada      # aplica a escada inteira (é o que vale aqui)
+.call limite escada 5    # mesma coisa começando em 5 na segunda call
+.call limite 99          # todas as calls
+.call limite 99 gf caos  # só essas duas
+.call limite gf=2 caos=10 purgatorio=99   # cada call com o seu
+.call limite 0           # volta pro sem limite
 ```
+
+A escada usa a ordem real das calls no servidor (posição dentro da categoria) e
+pula a call que já está no valor, então pode rodar quantas vezes quiser.
 
 O valor fica gravado no backup, então o próximo `.restaurar` já traz o limite
 certo. Vale também pôr o `userLimit` nos canais de voz do
