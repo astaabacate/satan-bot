@@ -35,6 +35,33 @@ Publicar `bot.js` junto com `scripts/unban-all.js` e reiniciar o bot para ativar
 Não atualizar apenas `bot.js` pelo `.att`: ele depende do novo módulo.
 Nenhum banimento real é removido pela instalação ou pelos testes.
 
+## Palavras bloqueadas (`.bloquear`)
+
+Só o dono usa. É a lista **dele**, mexida na hora — diferente do filtro de
+denúncia, que é código (conteúdo que derruba o servidor e que não se desliga por
+engano).
+
+```text
+.bloquear cu, bosta, vai se fuder   # bloqueia (vírgula, pipe ou quebra separam)
+.desbloquear cu, bosta              # desbloqueia
+.bloqueios                          # lista, com quantas vezes cada uma pegou
+.bloqueios fala cu                  # testa se a frase cairia em alguma palavra
+```
+
+- **Ação: apaga a mensagem e registra no canal de logs.** Sem mute, sem timeout e
+  sem ban — igual ao filtro de denúncia.
+- O dono é imune (precisa conseguir digitar a palavra para bloquear/desbloquear).
+- Casa **palavra inteira**: bloquear `cu` pega “cuuu” e “c.u” (letra esticada e
+  pontuação no meio), mas não derruba “inculo”. Sufixo precisa de termo novo:
+  `puta` não pega “putaria”.
+- Acentos, caixa e leet (`b0sta`) dão na mesma — usa a mesma normalização do filtro.
+- Até 300 palavras, 60 caracteres cada.
+- A lista fica em `blacklist_palavras.json`, sincronizado no repositório: o runner
+  do GitHub Actions é descartável, e é isso que faz a lista sobreviver ao restart.
+
+Para ativar: publicar `bot.js` junto com `scripts/blacklist-palavras.js` na
+versão de produção e reiniciar. Alterações só na branch de trabalho não ativam.
+
 ## Filtro de proteção infantil
 
 O filtro textual inclui `CP`, `CSAM`, `CSEM` e termos relacionados em português

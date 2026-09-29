@@ -7,6 +7,7 @@ const { buildChannelSpec, missingPerms, PERMS_BOT_CANAL } = require('./scripts/c
 const { garantirOrdemInferno, irmaosOrdenados, posicaoDoConfessionario } = require('./scripts/channel-order.js');
 const { restaurarCanais } = require('./scripts/restaurar-canais.js');
 const { aplicarLimitesVoz, parsearCallLimite, planoEscada, ehEscada } = require('./scripts/call-limite.js');
+const { adicionarPalavras, removerPalavras, listarPalavras, casarPalavras, registrarUso, separarTermos } = require('./scripts/blacklist-palavras.js');
 const { snapshotGuild } = require('./scripts/server-snapshot.js');
 const { rebuildServer } = require('./scripts/rebuild-server.js');
 const { configurarServidor } = require('./scripts/setup-servidor.js');
@@ -107,6 +108,7 @@ const penaltyUntil = new Map();
 const MUTE_STATE = path.join(ROOT, 'mute_state.json');
 const LOGS_STATE = path.join(ROOT, 'logs_state.json');
 const BLACKLIST_STATE = path.join(ROOT, 'blacklist_state.json');
+const PALAVRAS_STATE = path.join(ROOT, 'blacklist_palavras.json'); // palavras bloqueadas pelo dono (.bloquear)
 const MUTE_BASE_MS = 60 * 60 * 1000;
 const REP_MUTE_QTD = 10;
 const repStreak = new Map(); // userId -> { sig, count }
@@ -312,6 +314,8 @@ function menuMsg() {
               '',
               '**`.call limite 99`** (pessoas por call; `0` = sem limite)',
               '',
+              '**`.bloquear`** / **`.desbloquear`** / **`.bloqueios`** (palavras)',
+              '',
               '**`.snapshot agora`** (força o backup)',
               '',
               '**`.bump`**',
@@ -466,6 +470,27 @@ function blacklistAdd(userId, dados = {}) {
   st.users[userId] = { userId, ...st.users[userId], ...dados, atualizadoEm: new Date().toISOString() };
   salvarBlacklist(st);
   return st.users[userId];
+}
+// palavras bloqueadas pelo dono: lista dele, mexida por comando, sem redeploy.
+// cache por mtime: o teste roda em TODA mensagem, nao da pra reler o json sempre
+let palavrasCache = null;
+let palavrasCacheMtime = 0;
+function lerPalavrasBloqueadas() {
+  try {
+    const stt = fs.statSync(PALAVRAS_STATE);
+    if (palavrasCache && stt.mtimeMs === palavrasCacheMtime) return palavrasCache;
+    palavrasCache = readJsonSafe(PALAVRAS_STATE, { palavras: {} });
+    palavrasCacheMtime = stt.mtimeMs;
+    return palavrasCache;
+  } catch {
+    return (palavrasCache = readJsonSafe(PALAVRAS_STATE, { palavras: {} }));
+  }
+}
+function salvarPalavras(st) {
+  fs.writeFileSync(PALAVRAS_STATE, JSON.stringify(st, null, 2));
+  palavrasCache = st;
+  try { palavrasCacheMtime = fs.statSync(PALAVRAS_STATE).mtimeMs; } catch { palavrasCacheMtime = 0; }
+  ghStateSyncTick();
 }
 function blacklistDel(userId) {
   const st = lerBlacklist();
@@ -925,7 +950,7 @@ client.on('typingStart', async (t) => {
 
 
 // ---------- estado persistente no repo GitHub (sobrevive a religadas/updates) ----------
-const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'logs_state.json', 'blacklist_state.json', 'server_snapshot.json'];
+const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'logs_state.json', 'blacklist_state.json', 'blacklist_palavras.json', 'server_snapshot.json'];
 async function ghStateLoad() {
   const tok = process.env.GITHUB_TOKEN, repo = process.env.GITHUB_REPOSITORY;
   if (!tok || !repo) return;
@@ -1225,6 +1250,83 @@ client.on('messageCreate', async (m) => {
         : 'não consegui salvar o backup agora — olha o `errors.log` / log do runner.').catch(() => {});
       return;
     }
+    // ---------- .bloquear / .desbloquear / .bloqueios: palavras do dono ----------
+    // lista do dono, em runtime (sem redeploy). Apaga a mensagem e registra no
+    // canal de logs — sem mute e sem ban, igual ao filtro de denuncia.
+    if (c === '.bloquear' || c.startsWith('.bloquear ')) {
+      await m.delete().catch(() => {});
+      const termos = separarTermos(m.content.slice(m.content.toLowerCase().indexOf('.bloquear') + 9));
+      if (!termos.length) {
+        await whSend(m.channel, [
+          '**`.bloquear cu, bosta, vai se fuder`** — bloqueia palavras (vírgula, pipe ou quebra de linha separam).',
+          'Casa palavra inteira: `cu` pega "cuuu" e "c.u", mas não "inculo".',
+          '**`.desbloquear cu`** • **`.bloqueios`** (lista) • **`.bloqueios <frase>`** (testa).',
+        ].join('\n')).catch(() => {});
+        return;
+      }
+      const st = lerPalavrasBloqueadas();
+      const r = adicionarPalavras(st, termos, { por: m.author.id });
+      salvarPalavras(st);
+      const total = Object.keys(st.palavras).length;
+      await whSend(m.channel, [
+        r.adicionadas.length ? `**Bloqueadas:** ${r.adicionadas.map((t) => '`' + t + '`').join(', ')}` : '',
+        r.jaTinham.length ? 'Já estavam: ' + r.jaTinham.map((t) => '`' + t + '`').join(', ') : '',
+        r.invalidas.length ? 'Ignoradas (vazias ou gigantes): ' + r.invalidas.join(', ') : '',
+        r.semEspaco.length ? 'Não coube (limite de 300): ' + r.semEspaco.join(', ') : '',
+        `Total: **${total}** palavra(s) bloqueada(s).`,
+      ].filter(Boolean).join('\n')).catch(() => {});
+      log('PALAVRA_ADD', { por: m.author.id, termos: r.adicionadas, total });
+      return;
+    }
+    if (c === '.desbloquear' || c.startsWith('.desbloquear ')) {
+      await m.delete().catch(() => {});
+      const termos = separarTermos(m.content.slice(m.content.toLowerCase().indexOf('.desbloquear') + 12));
+      if (!termos.length) {
+        await whSend(m.channel, 'usa **`.desbloquear cu, bosta`** (ou **`.bloqueios`** pra ver a lista).').catch(() => {});
+        return;
+      }
+      const st = lerPalavrasBloqueadas();
+      const r = removerPalavras(st, termos);
+      salvarPalavras(st);
+      const total = Object.keys(st.palavras).length;
+      await whSend(m.channel, [
+        r.removidas.length ? `**Desbloqueadas:** ${r.removidas.map((t) => '`' + t + '`').join(', ')}` : 'nada removido.',
+        r.naoTinham.length ? 'Não estavam na lista: ' + r.naoTinham.map((t) => '`' + t + '`').join(', ') : '',
+        `Total: **${total}** palavra(s) bloqueada(s).`,
+      ].filter(Boolean).join('\n')).catch(() => {});
+      log('PALAVRA_DEL', { por: m.author.id, termos: r.removidas, total });
+      return;
+    }
+    if (c === '.bloqueios' || c.startsWith('.bloqueios ')) {
+      await m.delete().catch(() => {});
+      const resto = m.content.slice(m.content.toLowerCase().indexOf('.bloqueios') + 10).trim();
+      const st = lerPalavrasBloqueadas();
+      // .bloqueios <frase> testa se a frase cairia em alguma palavra
+      if (resto) {
+        const hit = casarPalavras(resto, st);
+        await whSend(m.channel, hit
+          ? `🚫 cai na palavra bloqueada \`${hit.termo}\`.`
+          : '✅ não cai em nenhuma palavra bloqueada.').catch(() => {});
+        return;
+      }
+      const lista = listarPalavras(st);
+      if (!lista.length) {
+        await whSend(m.channel, 'nenhuma palavra bloqueada ainda. **`.bloquear palavra`** pra começar.').catch(() => {});
+        return;
+      }
+      const linhas = lista.map((p, i) => `${i + 1}. \`${p.termo}\`${p.usos ? ` (${p.usos}x)` : ''}`);
+      const paginas = [];
+      let atual = '';
+      for (const l of linhas) { // respeita o limite de 2000 caracteres do Discord
+        if (atual.length + l.length + 1 > 1400) { paginas.push(atual); atual = ''; }
+        atual += (atual ? '\n' : '') + l;
+      }
+      if (atual) paginas.push(atual);
+      for (const [i, pg] of paginas.entries()) {
+        await whSend(m.channel, `**${lista.length} palavra(s) bloqueada(s)**${paginas.length > 1 ? ` (${i + 1}/${paginas.length})` : ''}:\n${pg}`).catch(() => {});
+      }
+      return;
+    }
     if (c === '.nuke' || c === '.nuke on' || c === '.nuke off') {
       if (c === '.nuke' || c === '.nuke on') {
         const stJa = readJsonSafe(NUKE_STATE, {});
@@ -1474,6 +1576,25 @@ client.on('messageCreate', async (m) => {
           `**Trecho:** ${corta(limparCodigo(m.content), 300)}`,
         ].join('\n')).catch(() => {});
         return; // nao cai no anti-flood: ja foi tratado (sem mute/timeout/ban por filtro)
+      }
+    }
+    // 0.5) palavras que o DONO bloqueou (.bloquear): apaga e registra no canal
+    //      de logs. Sem castigo (nem mute, nem ban) — igual ao filtro de denuncia.
+    if (m.content) {
+      const stPal = lerPalavrasBloqueadas();
+      const hit = casarPalavras(m.content, stPal);
+      if (hit) {
+        registrarUso(stPal, hit.chave);
+        salvarPalavras(stPal);
+        await m.delete().catch(() => {});
+        log('PALAVRA_BLOQUEADA', { guild: m.guild.id, canal: m.channelId, user: m.author.id, termo: hit.termo, usos: hit.entrada.usos });
+        logEvento('🚫 palavra bloqueada', [
+          `**Palavra:** \`${hit.termo}\``,
+          `**Conta:** <@${m.author.id}> (\`${m.author.id}\`)`,
+          `**Canal:** <#${m.channelId}>`,
+          `**Trecho:** ${corta(limparCodigo(m.content), 300)}`,
+        ], 0x992d22);
+        return;
       }
     }
     const cfg = readJsonSafe(ANTIFLOOD_CFG, ANTIFLOOD_DEFAULT);
