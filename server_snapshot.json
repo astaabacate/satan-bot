@@ -1,9 +1,9 @@
 {
-  "salvoEm": "2026-09-29T07:27:06.438Z",
+  "salvoEm": "2026-09-29T08:24:05.545Z",
   "guild": {
     "id": "1554284137261830184",
     "name": "inferno",
-    "description": null,
+    "description": "único server sem regras que não cai.",
     "ownerId": "1521612392105250836",
     "icon": "8b1e936e3696e9b5b222ec61aaefe918",
     "banner": null,
@@ -18,8 +18,8 @@
     "premiumTier": 0,
     "premiumSubscriptionCount": 0,
     "features": [
-      "COMMUNITY",
-      "NEWS"
+      "NEWS",
+      "COMMUNITY"
     ]
   },
   "categorias": [
