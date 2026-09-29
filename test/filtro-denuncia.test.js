@@ -27,7 +27,7 @@ test('furando filtro: letra trocada, pontuação e zero-width', () => {
 test('não derruba mensagem normal (falso positivo é o pior erro aqui)', () => {
   for (const txt of [
     'kkkkkkkkkkk', 'boa noite galera', 'vou matar a fome', 'to com sono',
-    'capa do filme é Linda', 'cp do pokemon', 'eu quero morrer de rir',
+    'capa do filme é Linda', 'eu quero morrer de rir',
     'me mato de rir kkk', 'vou explodir essa foto', 'gorei nesse bottoms',
     'papo de macho', 'aquele jogo é daxo', 'amanhã tem aula', 'bom dia',
     'qualquer coisa me chama', 'to com medo do',
@@ -49,4 +49,31 @@ test('só o conteúdo mais grave marca como grave (alerta vermelho pro dono)', (
   assert.deepEqual(graves, ['menor-sexual', 'automutilacao', 'ameaca', 'extorsao']);
   assert.equal(classificarDenuncia('meu cpf é 529.982.247-25').grave, false);
   assert.equal(classificarDenuncia('pornografia infantil').grave, true);
+});
+
+
+test('CP e siglas relacionadas são bloqueadas inclusive em usos não sexuais', () => {
+  for (const text of ['CP', 'cp do pokemon', 'manda cp', 'c.p', 'C P', 'c-p',
+    'c\u200bp', 'c\u2060p', 'ＣＰ', '(cp)', 'cp!', 'c💀p', 'CP brincadeira',
+    'csam', 'C.S.A.M.', 'CSEM', 'c s e m']) {
+    const result = classificarDenuncia(text);
+    assert.equal(result?.cat, 'menor-sexual', text);
+    assert.equal(result.grave, true, text);
+  }
+});
+
+test('siglas não são substrings de palavras ou letras entre palavras', () => {
+  for (const text of ['CPF', 'TCP', 'SCP', 'cpus', 'recepcao', 'abc poe',
+    'pc para jogar', 'c pessoa', 'csample', 'cseminario', 'acp', 'cp2', 'ação cpá']) {
+    assert.equal(classificarDenuncia(text), null, text);
+  }
+});
+
+test('amplia termos de proteção infantil sem exceção por alegar brincadeira', () => {
+  for (const text of ['material de abuso sexual infantil', 'exploração sexual de menores',
+    'child sexual abuse material', 'child sexual exploitation material',
+    'pedopornografia', 'pedofilia', 'nudes de menores', 'pornografia de crianças',
+    'pornografia infantil brincadeira', 'pedofilia de rir']) {
+    assert.equal(classificarDenuncia(text)?.cat, 'menor-sexual', text);
+  }
 });

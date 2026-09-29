@@ -21,12 +21,19 @@ const REGRAS = [
     grave: true,
     termos: [
       'pornografia infantil', 'porno infantil', 'porn infant', 'papo infantil',
-      'child porn', 'pedopornia', 'pedo porno',
+      'child porn', 'child pornography', 'child sexual abuse material',
+      'child sexual exploitation material', 'material de abuso sexual infantil',
+      'abuso sexual infantil', 'exploracao sexual infantil',
+      'exploracao sexual de menores', 'abuso sexual de menores',
+      'pornografia de menores', 'pornografia de criancas', 'porno de crianca',
+      'nude infantil', 'nudes infantis', 'nudes de menores', 'nudes de criancas',
+      'pedopornia', 'pedopornografia', 'pedofilia', 'pedofilo', 'pedofila', 'pedo porno',
       'nu de menor', 'menor nu', 'menor nu', 'desnuda de menor', 'foto de menor',
       'video de menor', 'menor sem roupa', 'menor pelada', 'menor de idade nu',
       'estupro de menor', 'abusar de menor', 'molestar menor',
       'underage', 'loli', 'lolicon', 'shotacon', 'shota',
     ],
+    siglas: ['cp', 'csam', 'csem'],
     regex: [/\bmenor(?:es)?\s+de\s+\d{1,2}\s+anos?\b.{0,40}\b(nu|nua|nude|porn|sexo|sexual)\b/i],
   },
   {
@@ -105,7 +112,7 @@ function colado(t) { return normalizar(t).replace(/ /g, ''); }
 
 // termo com espaco e/ou pontuacao: casa no texto normalizado e no "colado"
 // (assim "c.p", "c p" e "c-p" caem no mesmo termo)
-function casa(termo, txt, limpo, col) {
+function casa(termo, txt, limpo, col, permitirZoeira = true) {
   let idx = limpo.indexOf(termo);
   if (idx < 0) {
     const c = termo.replace(/[^a-z]/g, '');
@@ -114,8 +121,20 @@ function casa(termo, txt, limpo, col) {
   }
   // zoeira logo depois do termo? ("vou morrer DE RIR", "me mato DEMAIS")
   const depois = txt.slice(idx, idx + termo.length + 30);
-  if (ZOEIRO_TEST.test(depois)) return false;
+  if (permitirZoeira && ZOEIRO_TEST.test(depois)) return false;
   return true;
+}
+
+// Siglas curtas nunca são buscadas no texto "colado": isso bloquearia CPF,
+// TCP, SCP e letras que apenas coincidem entre palavras. NFKC cobre fullwidth;
+// marcas invisíveis são removidas sem unir palavras separadas por espaços.
+function textoSiglas(texto) {
+  return texto.normalize('NFKC').toLowerCase()
+    .replace(/[\p{Cf}\p{Mn}]/gu, '');
+}
+function casarSigla(texto, sigla) {
+  const letras = sigla.split('').join('[\\s\\p{P}\\p{S}]*');
+  return new RegExp('(?<![\\p{L}\\p{N}_])' + letras + '(?![\\p{L}\\p{N}_])', 'u').test(texto);
 }
 
 /**
@@ -124,12 +143,16 @@ function casa(termo, txt, limpo, col) {
  */
 function classificarDenuncia(texto) {
   if (!texto || typeof texto !== 'string') return null;
+  const siglasTexto = textoSiglas(texto);
   const txt = normalizar(texto);
   const limpo = normalizarSemZoeira(texto);
   const col = colado(texto);
   for (const regra of REGRAS) {
+    for (const sigla of (regra.siglas || [])) {
+      if (casarSigla(siglasTexto, sigla)) return { cat: regra.cat, cor: regra.cor, grave: !!regra.grave, termo: sigla };
+    }
     for (const termo of regra.termos) {
-      if (casa(termo, txt, limpo, col)) return { cat: regra.cat, cor: regra.cor, grave: !!regra.grave, termo };
+      if (casa(termo, txt, regra.cat === 'menor-sexual' ? txt : limpo, col, regra.cat !== 'menor-sexual')) return { cat: regra.cat, cor: regra.cor, grave: !!regra.grave, termo };
     }
     for (const rx of (regra.regex || [])) {
       const achou = texto.match(rx);
@@ -140,7 +163,7 @@ function classificarDenuncia(texto) {
 }
 
 function resumoRegras() {
-  return REGRAS.map((r) => ({ cat: r.cat, grave: !!r.grave, termos: r.termos.length, regex: (r.regex || []).length }));
+  return REGRAS.map((r) => ({ cat: r.cat, grave: !!r.grave, termos: r.termos.length, siglas: (r.siglas || []).length, regex: (r.regex || []).length }));
 }
 
 module.exports = { classificarDenuncia, normalizar, colado, resumoRegras, REGRAS };

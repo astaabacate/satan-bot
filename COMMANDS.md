@@ -34,3 +34,19 @@ Não é um comando para interromper uma operação já iniciada.
 Publicar `bot.js` junto com `scripts/unban-all.js` e reiniciar o bot para ativar.
 Não atualizar apenas `bot.js` pelo `.att`: ele depende do novo módulo.
 Nenhum banimento real é removido pela instalação ou pelos testes.
+
+## Filtro de proteção infantil
+
+O filtro textual inclui `CP`, `CSAM`, `CSEM` e termos relacionados em português
+ e inglês. As siglas são verificadas como palavras separadas, com tolerância a
+espaços, pontuação e caracteres invisíveis, sem bloquear `CPF`, `TCP` ou `SCP`.
+`CP` é bloqueado independentemente do contexto (inclusive jogos). Termos dessa
+categoria não recebem exceção por conterem “brincadeira” ou “zoeira”.
+
+A ação continua sendo a já configurada para `menor-sexual`: tentativa de apagar,
+aviso ao dono e castigo. O filtro não analisa imagens/vídeos, não distingue
+conversas educativas de outras menções e não garante detectar toda variação.
+A imunidade do dono existente no bot não foi alterada.
+
+Para ativar: publicar `scripts/filtro-denuncia.js` na versão de produção e
+reiniciar o bot. Alterações apenas na branch de trabalho não ativam o filtro.
