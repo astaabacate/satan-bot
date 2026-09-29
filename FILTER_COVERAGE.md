@@ -80,6 +80,13 @@ pontuação/leet: `a.b.u.s.e.i`, `3stuprei` etc.
 - Flood/spam continua com punições separadas (timeout progressivo de 1h +1h, `mute_state.json`), sem alteração aqui.
 - Categorias, permissões de canais e mensagem de boas-vindas não são alteradas por este filtro.
 
+## Blacklist curada (`blacklist_termos.json`)
+
+`blacklist_termos.json` espelha os termos de detecção do filtro, separados por
+gravidade (`alta` = `grave: true`, `baixa` = o resto). É a referência curada da
+cobertura: **não é lida em runtime** pelo bot. Ao alterar termos, atualizar o
+JSON junto com `scripts/filtro-denuncia.js` e rodar `npm test`.
+
 ## Limitações (importante)
 
 - Não analisa imagem, vídeo, áudio, link externo ou arquivo. Só texto da mensagem (`m.content`).
@@ -102,7 +109,7 @@ Links reais continuam apagados: `https://…`, `www.…`, `discord.gg/…`, `dis
 
 `npm test` (`node --test`) roda sem Discord/rede:
 
-- `test/filtro-denuncia.test.js` — categorias, leet/pontuação/zero-width, falsos positivos, normalização, graves vs não-graves, siglas `CP/CSAM/CSEM` e termos ampliados.
+- `test/filtro-denuncia.test.js` — categorias (incl. `violencia-sexual`), leet/pontuação/zero-width, falsos positivos, normalização, graves vs não-graves, siglas `CP/CSAM/CSEM` e termos ampliados.
 - `test/link-prose.test.js` — prosa normal não é link, prosa em bloco de código não é link, links reais ainda são pegos, convites obfuscados ainda caem.
 
 Total esperado: **61 testes**.
