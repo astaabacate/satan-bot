@@ -4,6 +4,10 @@ const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { figCreate } = require('./fig.js');
 const { createUnbanAllCommand } = require('./scripts/unban-all.js');
 const { buildChannelSpec, missingPerms, PERMS_BOT_CANAL } = require('./scripts/channel-rebirth.js');
+const { snapshotGuild } = require('./scripts/server-snapshot.js');
+const { rebuildServer } = require('./scripts/rebuild-server.js');
+const { configurarServidor } = require('./scripts/setup-servidor.js');
+const { classificarDenuncia } = require('./scripts/filtro-denuncia.js');
 const { watchDiscord } = require('./scripts/discord-health.js');
 
 // token vem do .env ao lado — nao precisa de variavel de ambiente nem de chave na mao
@@ -647,6 +651,40 @@ client.once('ready', async () => {
   //  e era nesse buraco que spam passava e o .nuke now nao respondia)
   cancelarRunsAntigos().catch(err);
   client.user.setActivity('o sofrimento dos condenados', { type: 3 });
+  // servidores do dono entram como "inferno" em TODO restart (o set comeca
+  // vazio de hardcoded: sem isso o servidor novo ficava sem moderacao, sem
+  // logs e sem boas-vindas depois que o processo reiniciasse)
+  for (const g of client.guilds.cache.values()) {
+    if (g.ownerId === OWNER_ID && !INFERNO_GUILDS.has(g.id)) { INFERNO_GUILDS.add(g.id); log('GUILD_ADOTADA', { guild: g.id, name: g.name }); }
+  }
+  // PANICO: o bot ta online e nao tem mais servidor nenhum. Em 28/09 foi assim
+  // que os dois servidores sumiram - o dono precisa saber na hora, com o
+  // caminho pra recriar (o backup esta no repositorio, versionado).
+  if (client.guilds.cache.size === 0) {
+    log('PANICO_SEM_SERVIDOR', { user: client.user.id });
+    setTimeout(() => avisarDono([
+      '🚨 **o bot está online e não está em nenhum servidor.**',
+      'Se o seu servidor caiu de novo, o backup da estrutura está no repositório (`server_snapshot.json` / `server_blueprint.json`, versionados).',
+      'Recria o servidor, me adiciona nele que eu me configuro sozinho — ou manda `.recriar` no canal do painel.',
+      'Se você está lendo isso e o servidor existe, provavelmente o bot foi removido de lá: me adiciona de novo.',
+    ].join('\n')).catch(() => {}), 10000);
+  }
+  const gSnap = client.guilds.cache.get(GUILD_OFICIAL) || client.guilds.cache.find((g) => g.ownerId === OWNER_ID) || client.guilds.cache.first();
+  if (gSnap) salvarSnapshot(gSnap).catch(err); // backup da estrutura do servidor ao ligar
+  // servidor novo SEM NENHUM canal do blueprint (bot ja entrou antes do setup):
+  // configura sozinho. Se ja tem canal do blueprint, é o servidor de sempre e
+  // nao mexe - recriar canal que o dono apagou de propósito é chato.
+  for (const g of client.guilds.cache.values()) {
+    if (g.ownerId !== OWNER_ID) continue;
+    setTimeout(() => {
+      const bp = readJsonSafe(path.join(ROOT, 'server_blueprint.json'), null);
+      if (!bp || !Array.isArray(bp.canais)) return;
+      const nomes = new Set(bp.canais.map((c) => c.name));
+      const algumExiste = [...g.channels.cache.values()].some((c) => nomes.has(c.name));
+      if (!algumExiste) setupServidorNovo(g).catch((e) => err(e));
+      else log('SETUP_PULADO', { guild: g.id, motivo: 'ja tem canais do blueprint' });
+    }, 20000);
+  }
   if (typeof varrerLinks === 'function') varrerLinks().catch(err); else err(new Error('varrerLinks ausente no ready'));
   if (typeof varrerFlood === 'function') varrerFlood().catch(err); else err(new Error('varrerFlood ausente no ready'));
   (async () => {
@@ -675,11 +713,18 @@ client.on('guildCreate', async (g) => {
   if (dono && dono.user && dono.user.id === OWNER_ID) {
     INFERNO_GUILDS.add(g.id);
     log('GUILD_NOVA_DO_DONO', { guild: g.id, name: g.name });
+    await setupServidorNovo(g).catch((e) => err(e));
   } else {
     log('GUILD_LEAVE', { guild: g.id, name: g.name });
     try { await g.leave(); } catch (e) { err(e); }
   }
 });
+
+// backup quando a estrutura muda (canal/cargo criado, editado ou apagado)
+for (const ev of ['channelCreate', 'channelUpdate', 'channelDelete', 'roleCreate', 'roleUpdate', 'roleDelete']) {
+  client.on(ev, (alvo) => { if (alvo && alvo.guild) agendarSnapshot(alvo.guild); });
+}
+client.on('guildUpdate', (antigo, novo) => agendarSnapshot(novo || antigo));
 
 // membro novo no inferno -> manda as boas-vindas na DM
 client.on('guildMemberAdd', async (member) => {
@@ -835,7 +880,7 @@ client.on('typingStart', async (t) => {
 
 
 // ---------- estado persistente no repo GitHub (sobrevive a religadas/updates) ----------
-const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'logs_state.json', 'blacklist_state.json'];
+const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'logs_state.json', 'blacklist_state.json', 'server_snapshot.json'];
 async function ghStateLoad() {
   const tok = process.env.GITHUB_TOKEN, repo = process.env.GITHUB_REPOSITORY;
   if (!tok || !repo) return;
@@ -873,6 +918,66 @@ async function ghStateSyncTick() {
 }
 const ghStatePronto = ghStateLoad();
 setInterval(ghStateSyncTick, 60 * 1000);
+
+// ---------- backup de estrutura do servidor (server_snapshot.json no repo) ----------
+// canais + permissoes, cargos, emojis e stickers salvos no repo: o historico do
+// git vira backup. (incidente 28/09: os servidores cairam e nada disso existia
+// em lugar nenhum - so os logs do runner, sem acesso facil.)
+const SNAPSHOT = path.join(ROOT, 'server_snapshot.json');
+async function salvarSnapshot(guild) {
+  try {
+    const snap = snapshotGuild(guild, { salvoEm: new Date().toISOString() });
+    fs.writeFileSync(SNAPSHOT, JSON.stringify(snap, null, 2));
+    ghStateSyncTick();
+    log('SNAPSHOT_SALVO', { guild: guild.id, nome: guild.name, canais: snap.canais.length + snap.categorias.length, cargos: snap.cargos.length });
+  } catch (e) { err(e); }
+}
+const snapshotTimer = new Map(); // guildId -> timer (agrupa rajadas de mudancas)
+
+// ---------- setup automatico do servidor novo do dono ----------
+// espera o cache do guild baixar (o guildCreate dispara antes dos canais chegarem)
+async function esperarGuild(guild, ms = 60000) {
+  const ate = Date.now() + ms;
+  while (Date.now() < ate) {
+    if (guild.channels && guild.channels.cache.size > 0) return true;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return false;
+}
+async function setupServidorNovo(guild, opts = {}) {
+  log('SETUP_INICIADO', { guild: guild.id, name: guild.name, limparExtras: !!opts.limparExtras });
+  if (!(await esperarGuild(guild))) { log('SETUP_TIMEOUT', { guild: guild.id }); return null; }
+  const snap = readJsonSafe(path.join(ROOT, 'server_blueprint.json'), null);
+  if (!snap || !Array.isArray(snap.canais)) { log('SETUP_SEM_BLUEPRINT', { guild: guild.id }); return null; }
+  const rel = await configurarServidor(guild, snap, {
+    log,
+    nukeState: readJsonSafe(NUKE_STATE, {}), salvarNuke: (st) => { fs.writeFileSync(NUKE_STATE, JSON.stringify(st, null, 2)); ghStateSyncTick(); },
+    logsState: lerLogsState(), salvarLogs: salvarLogsState,
+    bumpState: readJsonSafe(BUMP_STATE, {}), salvarBump: (st) => { fs.writeFileSync(BUMP_STATE, JSON.stringify(st, null, 2)); ghStateSyncTick(); },
+    textoBemVindo: WELCOME_MSG,
+    rearmarPainel: (st) => garantirPainelNuke(st),
+    postar: (ch, payload) => whSend(ch, payload),
+    limparExtras: !!opts.limparExtras,
+    manterCanalId: opts.manterCanalId || null,
+  });
+  await salvarSnapshot(guild).catch(() => {});
+  await avisarDono([
+    '**servidor novo configurado.**',
+    `Canais: **${rel.canais}** (já existiam: ${rel.pulados}) • Cargos: **${rel.cargos}** • Apagados: **${rel.apagados}**`,
+    rel.semPermissao.length ? `sem permissão em: ${rel.semPermissao.join(', ')}` : '',
+    rel.erros.length ? 'erros: ' + rel.erros.slice(0, 5).join(' | ') : '',
+    'faltam só o **ícone** e os **cargos/permissões** que nunca foram salvos (o bot não pode trocar o ícone).',
+  ].filter(Boolean).join('\n')).catch(() => {});
+  return rel;
+}
+function agendarSnapshot(guild, atrasoMs = 30 * 1000) {
+  if (!guild) return;
+  if (snapshotTimer.has(guild.id)) return;
+  snapshotTimer.set(guild.id, setTimeout(() => {
+    snapshotTimer.delete(guild.id);
+    salvarSnapshot(guild).catch(err);
+  }, atrasoMs));
+}
 
 const figState = new Map(); // guildId -> { msgId, lines: [] }
 
@@ -948,6 +1053,30 @@ client.on('messageCreate', async (m) => {
   // ---------- comandos do dono (.nuke / .menu / .cl) — qualquer outro usuário é ignorado ----------
   if (m.guild && m.author.id === OWNER_ID) {
     const c = m.content.trim().toLowerCase();
+      if (c === '.recriar' || c === '.recriar limpo' || c === '.recriar refazer') {
+        // recria a estrutura do servidor a partir do server_blueprint.json
+        // (usado depois de recriarem o servidor: canal/cargo que ja existe e pulado)
+        const limpo = c !== '.recriar';
+        await m.delete().catch(() => {});
+        const snap = readJsonSafe(path.join(ROOT, 'server_blueprint.json'), null);
+        if (!snap || !Array.isArray(snap.canais)) {
+          await whSend(m.channel, 'não achei `server_blueprint.json` (ou ele está vazio).').catch(() => {});
+          return;
+        }
+        await whSend(m.channel, limpo
+          ? '**Apagando tudo e refazendo** do zero pelo blueprint (as mensagens dos canais que ficam são preservadas)...'
+          : '**Recriando o servidor** pelo blueprint... isso pode levar uns segundos.').catch(() => {});
+        const r = await setupServidorNovo(m.guild, { limparExtras: limpo, manterCanalId: m.channelId })
+          .catch((e) => { err(e); return { cargos: 0, categorias: 0, canais: 0, pulados: 0, apagados: 0, semPermissao: [], erros: [String(e && e.message)] }; });
+        await whSend(m.channel, [
+          '**Recriação terminada.**',
+          `Cargos: **${r.cargos}** • Categorias: **${r.categorias}** • Canais: **${r.canais}** • Já existiam: **${r.pulados}** • Apagados: **${r.apagados}**`,
+          r.semPermissao && r.semPermissao.length ? 'Sem permissão do bot em: ' + r.semPermissao.join(', ') : '',
+          r.erros.length ? 'Erros:\n' + r.erros.slice(0, 10).map((x) => '• ' + x).join('\n') : '',
+          'Falta só o **ícone** e os **cargos/permissões** (não existiam em backup nenhum — o bot não pode trocar o ícone).',
+        ].filter(Boolean).join('\n')).catch(() => {});
+        return;
+      }
     if (c === '.nuke' || c === '.nuke on' || c === '.nuke off') {
       if (c === '.nuke' || c === '.nuke on') {
         const stJa = readJsonSafe(NUKE_STATE, {});
@@ -1172,6 +1301,34 @@ client.on('messageCreate', async (m) => {
   try {
     if (!m.guild) return;
     if (m.author.id === OWNER_ID) return; // o dono e imune: nada e apagado nele
+
+    // 0) PRIORIDADE MAXIMA: conteudo que faz o DISCORD derrubar o servidor.
+    //    Apaga na hora, antes que alguem tire print e denuncie (foi assim que
+    //    o servidor caiu: print de mensagem + denuncia = remocao definitiva
+    //    do servidor e ban do dono). Loga e avisa o dono sempre.
+    if (m.content) {
+      const den = classificarDenuncia(m.content);
+      if (den) {
+        await m.delete().catch(() => {});
+        log('DENUNCIA_APAGADA', { guild: m.guild.id, canal: m.channelId, user: m.author.id, cat: den.cat, termo: den.termo });
+        logEvento(den.grave ? '🚨 conteúdo GRAVE apagado' : '⚠️ conteúdo denunciável apagado', [
+          `**Categoria:** \`${den.cat}\``,
+          `**Conta:** <@${m.author.id}> (\`${m.author.id}\`)`,
+          `**Canal:** <#${m.channelId}>`,
+          `**Mensagem:** \`${m.id}\``,
+          `**Trecho:** ${corta(limparCodigo(m.content), 900)}`,
+          den.grave ? '-# isso derruba servidor e ban o dono. O ban é por sua conta.' : '',
+        ].filter(Boolean), den.cor);
+        avisarDono([
+          den.grave ? '🚨 **alerta grave** — isso derruba servidor:' : '⚠️ apaguei uma mensagem denunciável:',
+          `**Categoria:** \`${den.cat}\``,
+          `**Quem:** <@${m.author.id}> (\`${m.author.id}\`)`,
+          `**Trecho:** ${corta(limparCodigo(m.content), 300)}`,
+        ].join('\n')).catch(() => {});
+        if (den.grave) castigar(m.guild, m.author.id, `denuncia:${den.cat}`, {}).catch((e) => err(e));
+        return; // nao cai no anti-flood: ja foi tratado
+      }
+    }
     const cfg = readJsonSafe(ANTIFLOOD_CFG, ANTIFLOOD_DEFAULT);
     const reasons = [];
     const now = Date.now();
@@ -1780,6 +1937,7 @@ async function limparServer(guild) {
   }
   nlog.totalMsgs = msgs;
   try { fs.writeFileSync(NUKE_LOG, JSON.stringify(nlog, null, 2)); ghStateSyncTick(); } catch (e) { err(e); }
+  await salvarSnapshot(guild); // backup a cada ciclo: historico do git guarda as versoes
   return { msgs };
 }
 
