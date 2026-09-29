@@ -1,5 +1,5 @@
 {
-  "salvoEm": "2026-09-29T02:51:44.058Z",
+  "salvoEm": "2026-09-29T02:52:14.791Z",
   "guild": {
     "id": "1554284137261830184",
     "name": "inferno",
@@ -34,8 +34,8 @@
   ],
   "canais": [
     {
-      "id": "1554323715892715575",
-      "name": "bump",
+      "id": "1554323717088354456",
+      "name": "confessionario",
       "type": 0,
       "parentId": null,
       "position": 0,
@@ -72,8 +72,8 @@
       "userLimit": 0
     },
     {
-      "id": "1554323717088354456",
-      "name": "confessionario",
+      "id": "1554323715892715575",
+      "name": "bump",
       "type": 0,
       "parentId": null,
       "position": 1,
