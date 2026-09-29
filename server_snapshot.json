@@ -1,5 +1,5 @@
 {
-  "salvoEm": "2026-09-29T19:37:52.295Z",
+  "salvoEm": "2026-09-29T20:38:45.341Z",
   "guild": {
     "id": "1554284137261830184",
     "name": "inferno",
@@ -11,15 +11,15 @@
     "mfaLevel": 0,
     "explicitContentFilter": 2,
     "defaultMessageNotifications": 1,
-    "systemChannelId": "1554577851653558393",
+    "systemChannelId": "1554593173358248119",
     "rulesChannelId": "1554327593245745162",
     "publicUpdatesChannelId": "1554327593245745166",
     "preferredLocale": "en-US",
     "premiumTier": 0,
     "premiumSubscriptionCount": 0,
     "features": [
-      "NEWS",
-      "COMMUNITY"
+      "COMMUNITY",
+      "NEWS"
     ]
   },
   "categorias": [
@@ -48,7 +48,7 @@
   ],
   "canais": [
     {
-      "id": "1554577851653558393",
+      "id": "1554593173358248119",
       "name": "confessionario",
       "type": 0,
       "parentId": "1554329873089175582",
