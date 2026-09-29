@@ -1,0 +1,96 @@
+{
+  "salvoEm": "2026-09-29T02:47:23.448Z",
+  "guild": {
+    "id": "1554284137261830184",
+    "name": "inferno",
+    "description": null,
+    "ownerId": "1521612392105250836",
+    "icon": null,
+    "banner": null,
+    "verificationLevel": 0,
+    "mfaLevel": 0,
+    "explicitContentFilter": 0,
+    "defaultMessageNotifications": 0,
+    "systemChannelId": "1554284138343964736",
+    "rulesChannelId": null,
+    "publicUpdatesChannelId": null,
+    "preferredLocale": "en-US",
+    "premiumTier": 0,
+    "premiumSubscriptionCount": 0,
+    "features": []
+  },
+  "categorias": [
+    {
+      "id": "1554284138343964734",
+      "name": "Text Channels",
+      "type": 4,
+      "parentId": null,
+      "position": 0,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": []
+    },
+    {
+      "id": "1554284138343964735",
+      "name": "Voice Channels",
+      "type": 4,
+      "parentId": null,
+      "position": 1,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": []
+    }
+  ],
+  "canais": [
+    {
+      "id": "1554284138343964736",
+      "name": "general",
+      "type": 0,
+      "parentId": "1554284138343964734",
+      "position": 0,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": []
+    },
+    {
+      "id": "1554284138343964737",
+      "name": "General",
+      "type": 2,
+      "parentId": "1554284138343964735",
+      "position": 0,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [],
+      "bitrate": 64000,
+      "userLimit": 0
+    }
+  ],
+  "cargos": [
+    {
+      "id": "1554284378803281931",
+      "name": "Satan",
+      "color": 0,
+      "hoist": false,
+      "position": 1,
+      "permissions": "8",
+      "mentionable": false,
+      "managed": true
+    },
+    {
+      "id": "1554284137261830184",
+      "name": "@everyone",
+      "color": 0,
+      "hoist": false,
+      "position": 0,
+      "permissions": "2248473465835073",
+      "mentionable": false,
+      "managed": false
+    }
+  ],
+  "emojis": [],
+  "stickers": []
+}
