@@ -1,10 +1,3 @@
 {
-  "on": true,
-  "nextAt": 1790655315976,
-  "cmdChannel": "1554323717796921364",
-  "lastNuke": 0,
-  "painel": {
-    "channelId": "1554323717796921364",
-    "messageId": "1554330696686764035"
-  }
+  "on": false
 }
