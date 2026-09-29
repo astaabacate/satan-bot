@@ -30,6 +30,7 @@ const ERRORS = path.join(ROOT, 'errors.log');
 // anti-flood (ajustavel via antispam_config.json)
 const ANTIFLOOD_CFG = path.join(ROOT, 'antispam_config.json');
 const RE_INV = /[\s\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2800\u3164\ufeff\ufe00-\ufe0f\ufff0-\ufff8\ufffe\uffff\u{e0000}-\u{e007f}]/gu;
+const RE_INV_LINK = /[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2800\u3164\ufeff\ufe00-\ufe0f\ufff0-\ufff8\ufffe\uffff\u{e0000}-\u{e007f}]/gu;
 const ANTIFLOOD_DEFAULT = { chars: 300, windowMs: 6000, max: 5, penaltyMs: 10000, repeatWindowMs: 30000, emojiWindowMs: 60000, emojiMax: 5 };
 // repeticao DENTRO da mesma mensagem: qualquer palavra/emoji que apareca mais de
 // REP_INTERNA_MAX vezes derruba a mensagem (nigga\nnigga\nnigga..., oi oi oi oi, 😂😂😂😂).
@@ -46,7 +47,7 @@ const RE_EMOJI_UNI = /\p{Extended_Pictographic}(?:\uFE0F|\u20E3|\p{Emoji_Modifie
 // regex generico de link falhar por algum motivo
 const RE_CDN = /(?:cdn\.discordapp\.com|media\.discordapp\.net|images-ext-\d+\.discordapp\.net|attachments\/\d{17,20}\/\d{17,20}\/)/i;
 function temLinkCdn(m) {
-  const partes = [normLinkText(m.content || '')];
+  const partes = [normLinkText(stripCodeBlocks(m.content || ''))];
   for (const e of m.embeds || []) partes.push(e.url || '', (e.image && e.image.url) || '', (e.thumbnail && e.thumbnail.url) || '', (e.video && e.video.url) || '');
   return RE_CDN.test(partes.join(' '));
 }
@@ -118,20 +119,48 @@ const CROSS_SIMILAR_MIN = 3;
 // Link/convite robusto: pega http(s), www e dominio com TLD realista,
 // alem de convites do Discord com espacos/zero-width/fullwidth no meio
 // (ex: discord . gg /abc, canary.discord.com/invite/abc, discord://-/invite/abc).
+// Correção: prosa normal "ontem. Perdeu?" não pode virar "ontem.perdeu" (falso positivo)
+// e conteúdo dentro de bloco de código (`...` / ```...```) é ignorado.
+function stripCodeBlocks(t) {
+  return String(t || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`]*`/g, ' ');
+}
 const RE_LINK = /(?:https?:\/\/|www\.|\b[\p{L}0-9][\p{L}0-9-]{1,63}\.(?:[\p{L}]{2,24}|xn--[a-z0-9-]{2,59})(?:\b|\/))/iu;
 const RE_INVITE = /(?:\b(?:(?:canary|ptb)\.)?discord(?:app)?\.com\/invite\/|\bdiscord\.gg\/|\bdiscord\.me\/|\bdiscord\.io\/|\bdiscord\.li\/|\bdsc\.gg\/|\binvite\.gg\/|\bdisboard\.org\/server\b|\bdiscordservers\.com\/server\b|discord:\/\/-\/invite\/)/i;
-const RE_SEPARADORES_LINK = /\s*([.\/])\s*/g;
 function normLinkText(t) {
-  return String(t || '')
+  let s = String(t || '')
     .normalize('NFKC')
-    .replace(RE_INV, '')
+    .replace(RE_INV_LINK, '')
     .replace(/[。｡]/g, '.')
-    .replace(/[⁄∕／\\]/g, '/')
-    .replace(RE_SEPARADORES_LINK, '$1')
-    .toLowerCase();
+    .replace(/[⁄∕／\\]/g, '/');
+  // barra: sempre colapsa espaços ao redor (pega "discord / invite")
+  s = s.replace(/\s*\/\s*/g, '/');
+  // ponto: colapsa só quando não parece fim de frase.
+  // "ontem. Perdeu?" (ponto + espaço + maiúscula) deve ficar "ontem. Perdeu?",
+  // não "ontem.perdeu". Caso contrário, falso positivo com qualquer palavra após ponto.
+  s = s.replace(/\s*\.\s*/g, (m, off, str) => {
+    const hadSpace = /\s/.test(m);
+    const after = str.slice(off + m.length);
+    const next = after.trimStart()[0] || '';
+    const isUpper = next && /[A-ZÁÉÍÓÚÂÊÎÔÛÃÕÇÑ]/u.test(next);
+    if (hadSpace && isUpper) return '. ';
+    if (hadSpace) {
+      const nextWord = after.trimStart().split(/[^a-z0-9-]/i)[0] || '';
+      const low = nextWord.toLowerCase();
+      const conhecidos = new Set(['com','net','org','io','gg','me','li','co','br','app','dev','xyz','info','tv','ai','is','de','fr','es','pt','it','nl','be','ch','at','pl','ru','cn','jp','kr','au','ca','uk','us','eu','online','site','store','tech','blog','shop','icu','top','win','vip','live','cloud','page','link','biz','pro','mobi','name','so','in','ph','id','my','sg','th','vn','nz','za','mx','ar','cl','pe','uy','py','bo','cr','gt','hn','ni','pa','sv','do','pr','hn','gl','to','cc','ws','fm','am','im','st','gs','vg','vc','ag','lc','sc','gd','tc','gy','bz','dm','kn','ms','tt','ht','com.br','net.br','org.br']);
+      if (low && !conhecidos.has(low) && /^[a-z]{2,24}$/.test(low)) {
+        return '. ';
+      }
+    }
+    return '.';
+  });
+  return s.toLowerCase();
 }
 function temLink(t) {
-  const n = normLinkText(t);
+  if (!t) return false;
+  const semCodigo = stripCodeBlocks(t);
+  const n = normLinkText(semCodigo);
   return RE_LINK.test(n) || RE_INVITE.test(n);
 }
 function sigTextoVisual(t) {
@@ -1326,8 +1355,7 @@ client.on('messageCreate', async (m) => {
           `**Quem:** <@${m.author.id}> (\`${m.author.id}\`)`,
           `**Trecho:** ${corta(limparCodigo(m.content), 300)}`,
         ].join('\n')).catch(() => {});
-        if (den.grave) castigar(m.guild, m.author.id, `denuncia:${den.cat}`, {}).catch((e) => err(e));
-        return; // nao cai no anti-flood: ja foi tratado
+        return; // nao cai no anti-flood: ja foi tratado (sem mute/timeout/ban por filtro)
       }
     }
     const cfg = readJsonSafe(ANTIFLOOD_CFG, ANTIFLOOD_DEFAULT);
