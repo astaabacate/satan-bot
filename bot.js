@@ -5,6 +5,7 @@ const { figCreate } = require('./fig.js');
 const { createUnbanAllCommand } = require('./scripts/unban-all.js');
 const { buildChannelSpec, missingPerms, PERMS_BOT_CANAL } = require('./scripts/channel-rebirth.js');
 const { garantirOrdemInferno, irmaosOrdenados, posicaoDoConfessionario } = require('./scripts/channel-order.js');
+const { restaurarCanais } = require('./scripts/restaurar-canais.js');
 const { snapshotGuild } = require('./scripts/server-snapshot.js');
 const { rebuildServer } = require('./scripts/rebuild-server.js');
 const { configurarServidor } = require('./scripts/setup-servidor.js');
@@ -305,6 +306,10 @@ function menuMsg() {
               '**`.cl [qtd]`**',
               '',
               '**`.desbanir todos`** (pede confirmação)',
+              '',
+              '**`.restaurar`** / **`.restaurar voz`** (volta o que sumiu pelo backup)',
+              '',
+              '**`.snapshot agora`** (força o backup)',
               '',
               '**`.bump`**',
               '',
@@ -961,13 +966,29 @@ setInterval(ghStateSyncTick, 60 * 1000);
 // git vira backup. (incidente 28/09: os servidores cairam e nada disso existia
 // em lugar nenhum - so os logs do runner, sem acesso facil.)
 const SNAPSHOT = path.join(ROOT, 'server_snapshot.json');
-async function salvarSnapshot(guild) {
+// quantos canais+categorias um snapshot conhece (serve pra comparar versoes)
+function qtdCanaisSnap(s) {
+  if (!s || !Array.isArray(s.canais)) return 0;
+  return s.canais.length + (Array.isArray(s.categorias) ? s.categorias.length : 0);
+}
+async function salvarSnapshot(guild, { forcado = false } = {}) {
   try {
     const snap = snapshotGuild(guild, { salvoEm: new Date().toISOString() });
+    // NAO deixa um snapshot pior sobrescrever o backup bom: se sumiram canais
+    // (alguem apagou, raid, bug), o backup com a estrutura completa é justamente
+    // o que permite restaurar depois. Sem isso, o proximo boot do bot jogaria
+    // fora o unico backup que ainda tem os canais. Pra atualizar de propósito
+    // (ex.: apagou canal que queria mesmo apagar): .snapshot agora
+    const anterior = readJsonSafe(SNAPSHOT, null);
+    if (!forcado && qtdCanaisSnap(anterior) > qtdCanaisSnap(snap)) {
+      log('SNAPSHOT_RECUSADO', { salvo: qtdCanaisSnap(anterior), novo: qtdCanaisSnap(snap), salvoEm: anterior && anterior.salvoEm });
+      return 'recusado';
+    }
     fs.writeFileSync(SNAPSHOT, JSON.stringify(snap, null, 2));
     ghStateSyncTick();
     log('SNAPSHOT_SALVO', { guild: guild.id, nome: guild.name, canais: snap.canais.length + snap.categorias.length, cargos: snap.cargos.length });
-  } catch (e) { err(e); }
+    return 'salvo';
+  } catch (e) { err(e); return 'erro'; }
 }
 const snapshotTimer = new Map(); // guildId -> timer (agrupa rajadas de mudancas)
 
@@ -1114,6 +1135,57 @@ client.on('messageCreate', async (m) => {
         ].filter(Boolean).join('\n')).catch(() => {});
         return;
       }
+    // ---------- .restaurar: volta o que sumiu (ex.: apagaram os canais de voz) ----------
+    if (c === '.restaurar' || c.startsWith('.restaurar ')) {
+      // cria SÓ o que não existe mais, dentro da categoria original e com as
+      // permissões do backup — nunca apaga nada (quem apaga é o .recriar limpo)
+      await m.delete().catch(() => {});
+      const soVoz = /voz|call|voice/.test(c);
+      // `.restaurar de backups/arquivo.json` usa um backup especifico (util se o
+      // server_snapshot.json mais novo ja estiver sem os canais)
+      const alvo = (c.match(/\bde\s+([\w.\-/]+\.json)/) || [])[1];
+      let snap = null;
+      if (alvo) {
+        const p = path.join(ROOT, alvo.replace(/^[/\\]+/, ''));
+        if (!p.startsWith(ROOT + path.sep)) {
+          await whSend(m.channel, 'esse arquivo está fora da pasta do bot.').catch(() => {});
+          return;
+        }
+        snap = readJsonSafe(p, null);
+      } else {
+        snap = readJsonSafe(SNAPSHOT, null);
+      }
+      if (!snap || !Array.isArray(snap.canais)) {
+        await whSend(m.channel, 'não achei o backup' + (alvo ? ` \`${alvo}\`` : ' `server_snapshot.json`') + ' (ou ele está vazio).').catch(() => {});
+        return;
+      }
+      await whSend(m.channel, (soVoz
+        ? '**Restaurando os canais de voz** que sumiram'
+        : '**Restaurando o que sumiu**') + ` a partir de \`${alvo || 'server_snapshot.json'}\` (nada é apagado)...`).catch(() => {});
+      const r = await restaurarCanais(m.guild, snap, { log, tipos: soVoz ? [2] : null })
+        .catch((e) => { err(e); return { categorias: [], canais: [], pulados: 0, ordem: [], semPermissao: [], erros: [String(e && e.message)] }; });
+      const criados = (r.categorias || []).length + (r.canais || []).length;
+      await whSend(m.channel, [
+        '**Restauração terminada.**',
+        `Criados: **${criados}**${(r.canais || []).length ? ' — ' + r.canais.join(', ') : ''} • Já existiam: **${r.pulados}**`,
+        (r.ordem || []).length ? 'Ordem arrumada: ' + r.ordem.map((o) => `\`${o.paiNome}\` → ${o.canais.join(' > ')}`).join(' | ') : '',
+        (r.semPermissao || []).length ? 'Recriado sem permissões (cargo do backup não existe mais): ' + r.semPermissao.join(', ') : '',
+        (r.erros || []).length ? 'Erros:\n' + r.erros.slice(0, 10).map((x) => '• ' + x).join('\n') : '',
+        criados ? '' : 'Nada estava faltando: o servidor já tem tudo o que o backup conhece.',
+      ].filter(Boolean).join('\n')).catch(() => {});
+      await salvarSnapshot(m.guild, { forcado: true }).catch(() => {}); // agora tem MAIS canais: pode atualizar
+      log('RESTAURAR_CMD', { guild: m.guild.id, voz: soVoz, criados, erros: (r.erros || []).length });
+      return;
+    }
+    // ---------- .snapshot agora: força o backup (o normal recusa quando encolhe) ----------
+    if (c === '.snapshot' || c === '.snapshot agora' || c === '.snapshot forcar') {
+      await m.delete().catch(() => {});
+      const res = await salvarSnapshot(m.guild, { forcado: true });
+      await whSend(m.channel, res === 'salvo'
+        ? '**backup atualizado** (forçado).'
+        : 'não consegui salvar o backup agora — olha o `errors.log` / log do runner.').catch(() => {});
+      return;
+    }
     if (c === '.nuke' || c === '.nuke on' || c === '.nuke off') {
       if (c === '.nuke' || c === '.nuke on') {
         const stJa = readJsonSafe(NUKE_STATE, {});

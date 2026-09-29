@@ -57,6 +57,39 @@ existir canal `inferno` entre os irmãos, nada é mexido. Vale para o nuke, para
 só apareceria no nuke seguinte, até 1h depois do deploy). O resultado aparece em
 `nuke_log.json` (campo `ordem`) e a regressão está em `test/channel-order.test.js`.
 
+## Canais que somem: como restaurar (`.restaurar`)
+
+Em 29/09 os canais de voz do servidor oficial sumiram, sobrando 2. **Nenhum
+código do bot apaga canal de voz**: a única linha que apaga canal é o
+`f.delete()` do confessionário no nuke. Os caminhos que apagam em massa são:
+
+- `.recriar limpo` / `.recriar refazer` — apaga tudo cujo **nome** não está em
+  `server_blueprint.json` (os 9 nomes de voz estão lá; cairiam fora as
+  categorias `・`, `inferno`, `rules`, `logs` e `moderator-only`).
+- Alguém com **Gerenciar canais** apagando na mão.
+
+Para voltar o que sumiu (sem apagar nada do que ficou):
+
+```text
+.restaurar          # recria tudo que está no backup e não existe mais
+.restaurar voz      # só os canais de voz
+.restaurar de backups/server_snapshot-2026-09-29T1130Z.json   # backup específico
+```
+
+O restore (`scripts/restaurar-canais.js`) cria **só** o que falta, dentro da
+categoria original, com as permissões/overwrites do backup, e devolve a ordem
+original da categoria. Não cria cargo (o servidor é o mesmo: os ids das
+overwrites continuam valendo) e não apaga nada.
+
+O backup é o `server_snapshot.json`, que o bot reescreve sozinho a cada mudança
+de estrutura. Cópia com data em `backups/` serve de segurança.
+
+Proteção nova: `salvarSnapshot` **recusa** sobrescrever o backup quando o novo
+snapshot tem **menos** canais que o salvo (`SNAPSHOT_RECUSADO` no log). Sem isso,
+o boot seguinte ao incidente jogaria fora justamente o backup que permite
+restaurar. Se você apagou canais de propósito e quer atualizar o backup:
+`.snapshot agora`.
+
 ## Incidente de 27/09/2026 (spam não apagado)
 
 Em 27/09 entre 19:27–19:29 BRT houve flood no ・confessionario (mesma mensagem
