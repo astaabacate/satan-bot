@@ -75,7 +75,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: bot (loop infinito; .att reinicia com o codigo novo)
+      - name: bot (loop infinito)
         run: |
           falhas_seguidas=0
           travados=0
