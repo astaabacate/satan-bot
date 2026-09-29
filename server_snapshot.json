@@ -1,5 +1,5 @@
 {
-  "salvoEm": "2026-09-29T23:09:42.338Z",
+  "salvoEm": "2026-09-29T23:40:54.945Z",
   "guild": {
     "id": "1554284137261830184",
     "name": "inferno",
@@ -11,15 +11,15 @@
     "mfaLevel": 0,
     "explicitContentFilter": 2,
     "defaultMessageNotifications": 1,
-    "systemChannelId": "1554623800283242528",
+    "systemChannelId": "1554639017180397618",
     "rulesChannelId": "1554327593245745162",
     "publicUpdatesChannelId": "1554327593245745166",
     "preferredLocale": "en-US",
     "premiumTier": 0,
     "premiumSubscriptionCount": 0,
     "features": [
-      "NEWS",
-      "COMMUNITY"
+      "COMMUNITY",
+      "NEWS"
     ]
   },
   "categorias": [
@@ -116,7 +116,7 @@
       ]
     },
     {
-      "id": "1554623800283242528",
+      "id": "1554639017180397618",
       "name": "confessionario",
       "type": 0,
       "parentId": "1554329873089175582",
@@ -491,5 +491,12 @@
     }
   ],
   "emojis": [],
-  "stickers": []
+  "stickers": [
+    {
+      "id": "1554636777585901741",
+      "name": "discord.gg/inferninho",
+      "description": null,
+      "tags": "discord.gg/inferninho"
+    }
+  ]
 }
