@@ -46,8 +46,8 @@ const REGRAS = [
     // Sem "abuso" puro: pegaria "abuso de poder". Sem excecao de ZOEIRO.
     termos: [
       'estupro', 'estuprar', 'estuprada', 'estuprado', 'estuprador', 'estupradora',
-      'estupradores', 'estuprou', 'estuprando', 'estupra', 'estuprava',
-      'abusador', 'abusadora', 'abusadores', 'abuso sexual',
+      'estupradores', 'estuprou', 'estuprando', 'estupra', 'estuprei', 'estuprava',
+      'abusador', 'abusadora', 'abusadores', 'abuso sexual', 'abusei', 'abusou', 'abusava',
       'rape', 'rapist', 'sexual assault',
     ],
   },

@@ -55,13 +55,15 @@ underage, loli, lolicon, shotacon, shota
 
 ```
 estupro, estuprar, estuprada, estuprado, estuprador, estupradora, estupradores,
-estuprou, estuprando, estupra, estuprava,
-abusador, abusadora, abusadores, abuso sexual,
+estuprou, estuprando, estupra, estuprei, estuprava,
+abusador, abusadora, abusadores, abuso sexual, abusei, abusou, abusava,
 rape, rapist, sexual assault
 ```
 
 Sem “abuso” puro para não pegar “abuso de poder”. Categoria `grave` com a mesma
-ação das demais (apagar e avisar o dono, sem mute/timeout/ban).
+ação das demais (apagar e avisar o dono, sem mute/timeout/ban). Conjugações em
+1ª pessoa (`abusei`, `estuprei`) caem inclusive ofuscadas pelos mecanismos de
+pontuação/leet: `a.b.u.s.e.i`, `3stuprei` etc.
 
 **Exemplos que caem:**
 

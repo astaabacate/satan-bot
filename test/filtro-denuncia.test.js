@@ -25,6 +25,10 @@ test('furando filtro: letra trocada, pontuação e zero-width', () => {
   assert.equal(classificarDenuncia('meu cpf: 52998224725').cat, 'dox');
   assert.equal(classificarDenuncia('liga (11) 91234-5678').cat, 'dox');
   assert.equal(classificarDenuncia('meu email é mano@exemplo.com.br').cat, 'dox');
+  assert.equal(classificarDenuncia('abusei').cat, 'violencia-sexual');
+  assert.equal(classificarDenuncia('estuprei').cat, 'violencia-sexual');
+  assert.equal(classificarDenuncia('a.b.u.s.e.i').cat, 'violencia-sexual');
+  assert.equal(classificarDenuncia('3stuprei').cat, 'violencia-sexual');
 });
 
 test('não derruba mensagem normal (falso positivo é o pior erro aqui)', () => {
