@@ -38,6 +38,25 @@ Procedimento quando o Actions mostrar `DISCORD_TOKEN inválido`:
 5. Nunca colar o token no código, em issue, em chat ou em arquivo do repositório
    (ele é público): só no secret. Token que vazou deve ser resetado.
 
+## Correção de 29/09/2026 (confessionario renascia em cima do inferno)
+
+A cada nuke horário o ・confessionario voltava **acima** do canal `inferno`. A
+ordem certa é inferno em primeiro, confessionario em segundo.
+
+Causa: o nuke apaga o canal e recria passando `position: f.position`. Só que
+`f.position` é o índice **calculado pelo discord.js** dentro da categoria (0, 1,
+2...), não a posição bruta que o Discord usa para ordenar. O Discord não renumera
+as posições quando um canal é apagado — sobram buracos (ex.: 0, 5, 7, 8) — então
+um índice pequeno nasce antes de todo mundo.
+
+Correção (`scripts/channel-order.js`): depois de criar o canal, a ordem é
+aplicada de forma explícita — **inferno primeiro, confessionario logo abaixo,
+resto como estava** — com um único PATCH reindexando os irmãos (0..n-1). Se não
+existir canal `inferno` entre os irmãos, nada é mexido. Vale para o nuke, para o
+`.recriar` (`scripts/setup-servidor.js`) e para cada boot do bot (senão o conserto
+só apareceria no nuke seguinte, até 1h depois do deploy). O resultado aparece em
+`nuke_log.json` (campo `ordem`) e a regressão está em `test/channel-order.test.js`.
+
 ## Incidente de 27/09/2026 (spam não apagado)
 
 Em 27/09 entre 19:27–19:29 BRT houve flood no ・confessionario (mesma mensagem

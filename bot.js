@@ -4,6 +4,7 @@ const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { figCreate } = require('./fig.js');
 const { createUnbanAllCommand } = require('./scripts/unban-all.js');
 const { buildChannelSpec, missingPerms, PERMS_BOT_CANAL } = require('./scripts/channel-rebirth.js');
+const { garantirOrdemInferno, irmaosOrdenados, posicaoDoConfessionario } = require('./scripts/channel-order.js');
 const { snapshotGuild } = require('./scripts/server-snapshot.js');
 const { rebuildServer } = require('./scripts/rebuild-server.js');
 const { configurarServidor } = require('./scripts/setup-servidor.js');
@@ -701,6 +702,12 @@ client.once('ready', async () => {
   }
   const gSnap = client.guilds.cache.get(GUILD_OFICIAL) || client.guilds.cache.find((g) => g.ownerId === OWNER_ID) || client.guilds.cache.first();
   if (gSnap) salvarSnapshot(gSnap).catch(err); // backup da estrutura do servidor ao ligar
+  // ordem dos canais (inferno em primeiro, confessionario em segundo) tambem no
+  // boot: senao o conserto so apareceria no proximo nuke, ate 1h depois do deploy
+  if (gSnap) {
+    const confBoot = [...gSnap.channels.cache.values()].find((c) => /confessionar/i.test(c.name || ''));
+    if (confBoot) garantirOrdemInferno(gSnap, confBoot, { log }).catch(err);
+  }
   // servidor novo SEM NENHUM canal do blueprint (bot ja entrou antes do setup):
   // configura sozinho. Se ja tem canal do blueprint, é o servidor de sempre e
   // nao mexe - recriar canal que o dono apagou de propósito é chato.
@@ -1904,16 +1911,23 @@ async function limparServer(guild) {
     // canal sumiu (delete falhou antes, alguem apagou): recria do zero na categoria do bump
     log('NUKE_CONF_NAO_ACHADO', { guild: guild.id });
     const bump = chans.find((c) => c.type === 0 && /^bump$/i.test(c.name || ''));
+    const pai = (bump && bump.parentId) || undefined;
     conf = await guild.channels.create({
       name: '・confessionario',
       type: 0,
-      parent: (bump && bump.parentId) || undefined,
+      parent: pai,
+      // nasce logo abaixo do canal inferno (ver ordem abaixo)
+      position: posicaoDoConfessionario(irmaosOrdenados(chans, pai || null)),
       reason: 'nuke: confessionario recriado do zero',
     }).catch((e) => { nlog.erros.push('create do zero: ' + (e && e.message)); err(e); return null; });
     nlog.confCreate = conf ? conf.id : null;
     if (conf) {
       await garantirPermModeracao(guild, conf);
       await guild.setSystemChannel(conf).catch((e) => err(e));
+      // inferno primeiro, confessionario em segundo (mesma ordem do renascimento)
+      const ord = await garantirOrdemInferno(guild, conf, { log });
+      nlog.ordem = { canais: ord.ordem, mudou: ord.mudou, ok: ord.ok };
+      if (!ord.ok) nlog.erros.push('ordem: ' + ord.erro);
       await anunciarNuke(guild).catch(() => {}); nlog.anuncio = 'ok';
     }
   }
@@ -1926,6 +1940,14 @@ async function limparServer(guild) {
       const over = f.permissionOverwrites.cache.map((o) => ({
         id: o.id, type: o.type, allow: o.allow.bitfield, deny: o.deny.bitfield,
       }));
+      // BUG ANTIGO 2: copiar f.position fazia o confessionario nascer em cima do
+      // canal inferno. f.position e o INDICE dentro do pai (0, 1, 2...), nao a
+      // posicao bruta do Discord — e como o Discord nao renumera as posicoes
+      // quando um canal e apagado (sobram buracos), o indice 2 caia antes de
+      // todo mundo. Aqui o canal ja nasce no lugar certo (abaixo do inferno) e
+      // o garantirOrdemInferno reindexa os irmaos pra cravar a ordem.
+      const irmaos = irmaosOrdenados(chans, f.parentId);
+      const posNova = posicaoDoConfessionario(irmaos.filter((c) => c.id !== f.id), f.position);
       const spec = buildChannelSpec({
         name: f.name,
         type: f.type,
@@ -1933,7 +1955,7 @@ async function limparServer(guild) {
         topic: f.topic,
         nsfw: f.nsfw,
         rateLimitPerUser: f.rateLimitPerUser,
-        position: f.position,
+        position: posNova,
       }, over, { reason: 'nuke: renascimento do confessionario' });
       await f.delete('nuke: confessionario renasce').then(() => { nlog.confDelete = 'ok'; }).catch((e) => { nlog.confDelete = 'erro: ' + (e && e.message); err(e); });
       const novo = await guild.channels.create(spec).catch((e) => { nlog.erros.push('create: ' + (e && e.message)); err(e); return null; });
@@ -1942,6 +1964,10 @@ async function limparServer(guild) {
         log('NUKE_CONF_RECRIADO', { novo: novo.id, pos: novo.position, sistema: eraSistema, overwrites: over.length });
         await garantirPermModeracao(guild, novo); // self-heal se as perms antigas ja estavam perdidas
         await guild.setSystemChannel(novo).catch((e) => err(e)); // confessionario sempre selecionado
+        // ordem certa da categoria: inferno em primeiro, confessionario em segundo
+        const ord = await garantirOrdemInferno(guild, novo, { log });
+        nlog.ordem = { canais: ord.ordem, mudou: ord.mudou, ok: ord.ok };
+        if (!ord.ok) nlog.erros.push('ordem: ' + ord.erro);
         await anunciarNuke(guild); // mensagem entra no canal novo na hora
         nlog.anuncio = 'ok';
       }
