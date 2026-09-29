@@ -71,7 +71,19 @@ async function main() {
   if (!apply) return;
   assert.equal(errors.length, 0, 'Nem todos os canais foram verificados; nada será apagado ou movido');
   assert.equal(pinned.length, 1, 'Há zero ou mais de uma mensagem fixada; nada será apagado ou movido');
-  assert.equal(pinned[0].authorId, me.id, 'A única mensagem fixada não é do bot; nada será apagado ou movido');
+  assert.equal(guild.id, '1554284137261830184', 'Servidor mudou desde a inspeção');
+  assert.equal(category.id, '1554324703282466816', 'Categoria mudou desde a inspeção');
+  assert.equal(pinned[0].channelId, '1554323717088354456', 'Canal da mensagem mudou desde a inspeção');
+  assert.equal(pinned[0].id, '1554323748126199820', 'Mensagem fixada mudou desde a inspeção');
+  assert.ok(channels.filter(c => c.parent_id === category.id).length + voices.length <= 50, 'Categoria sem capacidade para todos os canais');
+  if (pinned[0].authorId !== me.id) {
+    assert.ok(pinned[0].webhookId, 'Mensagem não é do bot nem de webhook');
+    const hooks = await request(`/channels/${pinned[0].channelId}/webhooks`);
+    assert.ok(hooks.some(h => h.id === pinned[0].webhookId && h.user?.id === me.id), 'Webhook não pertence ao bot; nada será alterado');
+  }
+  const current = await request(`/channels/${pinned[0].channelId}/messages/${pinned[0].id}`);
+  assert.equal(current.pinned, true, 'Mensagem não está mais fixada');
+  assert.equal(current.author?.id, pinned[0].authorId, 'Autor não corresponde');
   // Exclusão remove o pin junto com a mensagem, sem precisar de um unpin separado.
   await request(`/channels/${pinned[0].channelId}/messages/${pinned[0].id}`, 'DELETE');
   console.log(`Mensagem do bot apagada (e desafixada): ${pinned[0].channelId}/${pinned[0].id}`);
@@ -86,6 +98,17 @@ async function main() {
     }
   }
   if (failures) throw new Error(`${failures} canal(is) de voz não movido(s); consulte o relatório`);
-  console.log(`Concluído: servidor ${guild.id}, ${voices.length} canais de voz movidos.`);
+  const after = await request(`/guilds/${guild.id}/channels`);
+  for (const before of channels.filter(c => c.type === 2)) {
+    const updated = after.find(c => c.id === before.id);
+    assert.equal(updated?.parent_id, category.id, `Canal ${before.id} fora da categoria após a mudança`);
+    const perms = list => JSON.stringify((list || []).map(o => ({ id: o.id, type: o.type, allow: o.allow, deny: o.deny })).sort((a, b) => a.id.localeCompare(b.id)));
+    assert.equal(perms(updated.permission_overwrites), perms(before.permission_overwrites), `Permissões do canal ${before.id} mudaram`);
+  }
+  try {
+    await request(`/channels/${pinned[0].channelId}/messages/${pinned[0].id}`);
+    throw new Error('Mensagem ainda existe após DELETE');
+  } catch (e) { if (!/HTTP 404$/.test(e.message)) throw e; }
+  console.log(`Concluído e verificado: mensagem ausente; servidor ${guild.id}, ${voices.length} canais de voz movidos, permissões preservadas.`);
 }
 main().catch(e => { console.error(e.message); process.exitCode = 1; });

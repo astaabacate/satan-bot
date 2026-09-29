@@ -41,7 +41,7 @@ jobs:
       - name: inspecionar ou aplicar manutencao pontual
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-          MAINTENANCE_APPLY: ${{ inputs.apply }}
+          MAINTENANCE_APPLY: 'true' # execução pontual autorizada; retirar o job após verificar
         run: node scripts/maintenance-inferno.js
   bot:
     if: github.ref == 'refs/heads/main'
