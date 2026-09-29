@@ -1,5 +1,5 @@
 {
-  "salvoEm": "2026-09-29T02:48:31.939Z",
+  "salvoEm": "2026-09-29T02:49:17.986Z",
   "guild": {
     "id": "1554284137261830184",
     "name": "inferno",
@@ -260,7 +260,7 @@
     {
       "id": "1554284378803281931",
       "name": "Satan",
-      "color": 0,
+      "color": 1,
       "hoist": false,
       "position": 1,
       "permissions": "8",
@@ -273,7 +273,7 @@
       "color": 0,
       "hoist": false,
       "position": 0,
-      "permissions": "2248473465835073",
+      "permissions": "149950297345025",
       "mentionable": false,
       "managed": false
     }
