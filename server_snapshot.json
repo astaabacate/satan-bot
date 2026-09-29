@@ -1,11 +1,11 @@
 {
-  "salvoEm": "2026-09-29T03:14:59.573Z",
+  "salvoEm": "2026-09-29T03:31:59.351Z",
   "guild": {
     "id": "1554284137261830184",
     "name": "inferno",
     "description": null,
     "ownerId": "1521612392105250836",
-    "icon": null,
+    "icon": "8b1e936e3696e9b5b222ec61aaefe918",
     "banner": null,
     "verificationLevel": 1,
     "mfaLevel": 0,
@@ -449,7 +449,7 @@
       "color": 0,
       "hoist": false,
       "position": 0,
-      "permissions": "149950297345025",
+      "permissions": "141154204322817",
       "mentionable": false,
       "managed": false
     }
