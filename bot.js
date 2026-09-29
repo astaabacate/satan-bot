@@ -6,6 +6,7 @@ const { createUnbanAllCommand } = require('./scripts/unban-all.js');
 const { buildChannelSpec, missingPerms, PERMS_BOT_CANAL } = require('./scripts/channel-rebirth.js');
 const { garantirOrdemInferno, irmaosOrdenados, posicaoDoConfessionario } = require('./scripts/channel-order.js');
 const { restaurarCanais } = require('./scripts/restaurar-canais.js');
+const { aplicarLimiteVoz } = require('./scripts/call-limite.js');
 const { snapshotGuild } = require('./scripts/server-snapshot.js');
 const { rebuildServer } = require('./scripts/rebuild-server.js');
 const { configurarServidor } = require('./scripts/setup-servidor.js');
@@ -308,6 +309,8 @@ function menuMsg() {
               '**`.desbanir todos`** (pede confirmação)',
               '',
               '**`.restaurar`** / **`.restaurar voz`** (volta o que sumiu pelo backup)',
+              '',
+              '**`.call limite 99`** (pessoas por call; `0` = sem limite)',
               '',
               '**`.snapshot agora`** (força o backup)',
               '',
@@ -1175,6 +1178,33 @@ client.on('messageCreate', async (m) => {
       ].filter(Boolean).join('\n')).catch(() => {});
       await salvarSnapshot(m.guild, { forcado: true }).catch(() => {}); // agora tem MAIS canais: pode atualizar
       log('RESTAURAR_CMD', { guild: m.guild.id, voz: soVoz, criados, erros: (r.erros || []).length });
+      return;
+    }
+    // ---------- .call limite <n>: quantas pessoas cabem na call (0 = sem limite) ----------
+    if (c === '.call' || c.startsWith('.call ')) {
+      await m.delete().catch(() => {});
+      const args = c.match(/^.call\s+limite\s+(\d+)\s*(.*)$/);
+      if (!args) {
+        await whSend(m.channel, [
+          '**`.call limite 99`** — bota o limite em todas as calls.',
+          '**`.call limite 99 gf`** — só na call `gf`.',
+          '**`.call limite 0`** — volta pro sem limite.',
+        ].join('\n')).catch(() => {});
+        return;
+      }
+      const apenas = String(args[2] || '').trim() || null;
+      const r = await aplicarLimiteVoz(m.guild, args[1], { apenas, log })
+        .catch((e) => { err(e); return { limite: null, aplicados: [], pulados: [], erros: [String(e && e.message)] }; });
+      const txt = r.erros.length && !r.aplicados.length
+        ? (r.erros[0] || 'não consegui mudar o limite.')
+        : [
+          `**Limite das calls agora: ${r.limite === 0 ? 'sem limite' : r.limite + ' pessoas'}.**`,
+          r.aplicados.length ? 'Mudou em: ' + r.aplicados.map((a) => `\`${a.nome}\` (${a.antes === 0 ? 'sem limite' : a.antes} → ${r.limite === 0 ? 'sem limite' : r.limite})`).join(', ') : '',
+          r.pulados.length ? 'Já estavam assim: ' + r.pulados.join(', ') : '',
+          r.erros.length ? 'Erros:\n' + r.erros.slice(0, 10).map((x) => '• ' + x).join('\n') : '',
+        ].filter(Boolean).join('\n');
+      await whSend(m.channel, txt).catch(() => {});
+      await salvarSnapshot(m.guild).catch(() => {}); // o limite entra no backup (e no .restaurar)
       return;
     }
     // ---------- .snapshot agora: força o backup (o normal recusa quando encolhe) ----------

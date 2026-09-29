@@ -84,6 +84,21 @@ overwrites continuam valendo) e não apaga nada.
 O backup é o `server_snapshot.json`, que o bot reescreve sozinho a cada mudança
 de estrutura. Cópia com data em `backups/` serve de segurança.
 
+Limite de pessoas por call (o restore copia o `userLimit` do backup; `0` =
+sem limite):
+
+```text
+.call limite 99      # todas as calls
+.call limite 99 gf   # só a call gf
+.call limite 0       # volta pro sem limite
+```
+
+O valor fica gravado no backup, então o próximo `.restaurar` já traz o limite
+certo. Vale também pôr o `userLimit` nos canais de voz do
+`server_blueprint.json` se quiser que o `.recriar` já nasça com ele (o blueprint
+da reconstrução de 28/09 não tinha esse campo — foi por isso que as calls
+voltaram sem limite naquela rebuild).
+
 Proteção nova: `salvarSnapshot` **recusa** sobrescrever o backup quando o novo
 snapshot tem **menos** canais que o salvo (`SNAPSHOT_RECUSADO` no log). Sem isso,
 o boot seguinte ao incidente jogaria fora justamente o backup que permite
