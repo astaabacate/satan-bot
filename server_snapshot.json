@@ -1,5 +1,5 @@
 {
-  "salvoEm": "2026-09-29T03:08:04.622Z",
+  "salvoEm": "2026-09-29T03:12:29.849Z",
   "guild": {
     "id": "1554284137261830184",
     "name": "inferno",
@@ -33,22 +33,39 @@
       "nsfw": false,
       "rateLimitPerUser": 0,
       "overwrites": []
+    },
+    {
+      "id": "1554329873089175582",
+      "name": "・",
+      "type": 4,
+      "parentId": null,
+      "position": 1,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": []
     }
   ],
   "canais": [
     {
-      "id": "1554323717088354456",
-      "name": "confessionario",
+      "id": "1554329873961590788",
+      "name": "inferno",
       "type": 0,
-      "parentId": null,
+      "parentId": "1554329873089175582",
       "position": 0,
       "topic": null,
       "nsfw": false,
       "rateLimitPerUser": 0,
       "overwrites": [
         {
-          "id": "1554284378803281931",
+          "id": "1554284137261830184",
           "type": 0,
+          "allow": "66560",
+          "deny": "4047287806785616"
+        },
+        {
+          "id": "1539465305326227477",
+          "type": 1,
           "allow": "536996864",
           "deny": "0"
         }
@@ -81,6 +98,54 @@
       "userLimit": 0
     },
     {
+      "id": "1554327593245745162",
+      "name": "rules",
+      "type": 0,
+      "parentId": null,
+      "position": 0,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "3072"
+        }
+      ]
+    },
+    {
+      "id": "1554323717088354456",
+      "name": "confessionario",
+      "type": 0,
+      "parentId": "1554329873089175582",
+      "position": 1,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "68608",
+          "deny": "4047287806783568"
+        },
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "536996864",
+          "deny": "0"
+        },
+        {
+          "id": "1539465305326227477",
+          "type": 1,
+          "allow": "536996864",
+          "deny": "0"
+        }
+      ]
+    },
+    {
       "id": "1554323719634026547",
       "name": "gf",
       "type": 2,
@@ -107,8 +172,8 @@
       "userLimit": 0
     },
     {
-      "id": "1554327593245745162",
-      "name": "rules",
+      "id": "1554327593245745166",
+      "name": "moderator-only",
       "type": 0,
       "parentId": null,
       "position": 1,
@@ -120,7 +185,37 @@
           "id": "1554284137261830184",
           "type": 0,
           "allow": "0",
-          "deny": "3072"
+          "deny": "1024"
+        }
+      ]
+    },
+    {
+      "id": "1554323715892715575",
+      "name": "bump",
+      "type": 0,
+      "parentId": "1554329873089175582",
+      "position": 2,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "1024"
+        },
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "536996864",
+          "deny": "0"
+        },
+        {
+          "id": "1539465305326227477",
+          "type": 1,
+          "allow": "536996864",
+          "deny": "0"
         }
       ]
     },
@@ -151,12 +246,12 @@
       "userLimit": 0
     },
     {
-      "id": "1554327593245745166",
-      "name": "moderator-only",
+      "id": "1554323717796921364",
+      "name": "logs",
       "type": 0,
-      "parentId": null,
-      "position": 2,
-      "topic": null,
+      "parentId": "1554329873089175582",
+      "position": 3,
+      "topic": "canal de logs do bot (webhook Satan Logs 1551879675306049596)",
       "nsfw": false,
       "rateLimitPerUser": 0,
       "overwrites": [
@@ -165,22 +260,16 @@
           "type": 0,
           "allow": "0",
           "deny": "1024"
-        }
-      ]
-    },
-    {
-      "id": "1554323715892715575",
-      "name": "bump",
-      "type": 0,
-      "parentId": null,
-      "position": 3,
-      "topic": null,
-      "nsfw": false,
-      "rateLimitPerUser": 0,
-      "overwrites": [
+        },
         {
           "id": "1554284378803281931",
           "type": 0,
+          "allow": "536996864",
+          "deny": "0"
+        },
+        {
+          "id": "1539465305326227477",
+          "type": 1,
           "allow": "536996864",
           "deny": "0"
         }
@@ -211,24 +300,6 @@
       ],
       "bitrate": 64000,
       "userLimit": 0
-    },
-    {
-      "id": "1554323717796921364",
-      "name": "logs",
-      "type": 0,
-      "parentId": null,
-      "position": 4,
-      "topic": "canal de logs do bot (webhook Satan Logs 1551879675306049596)",
-      "nsfw": false,
-      "rateLimitPerUser": 0,
-      "overwrites": [
-        {
-          "id": "1554284378803281931",
-          "type": 0,
-          "allow": "536996864",
-          "deny": "0"
-        }
-      ]
     },
     {
       "id": "1554323721874047147",
