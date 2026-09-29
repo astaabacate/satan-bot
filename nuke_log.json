@@ -1,19 +1,9 @@
 {
-  "quando": "2026-09-29T01:46:30.953Z",
-  "confAchado": null,
-  "confDelete": null,
-  "confCreate": null,
-  "anuncio": null,
-  "calls": [
-    {
-      "canal": "General",
-      "apagadas": 0
-    }
-  ],
-  "erros": [
-    "fetch canais: Expected token to be set for this request, but none was present",
-    "create do zero: Expected token to be set for this request, but none was present",
-    "call General: Expected token to be set for this request, but none was present"
-  ],
-  "totalMsgs": 0
+  "quando": "2026-09-29T04:23:43.041Z",
+  "confAchado": "1554323717088354456",
+  "confDelete": "ok",
+  "confCreate": "1554347925012746290",
+  "anuncio": "ok",
+  "calls": [],
+  "erros": []
 }
