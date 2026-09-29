@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "description": "Estrutura mínima provisória. Os nomes reais dos canais de logs/painel e a lista completa de canais, cargos e categorias ainda não foram recuperados.",
+  "systemChannel": "・confessionario",
+  "roles": [],
+  "channels": [
+    {
+      "name": "・confessionario",
+      "type": 0,
+      "topic": "Canal principal de mensagens",
+      "position": 0
+    },
+    {
+      "name": "logs",
+      "type": 0,
+      "topic": "Logs do servidor",
+      "position": 1
+    },
+    {
+      "name": "painel-nuke",
+      "type": 0,
+      "topic": "Painel de comandos do servidor",
+      "position": 2
+    }
+  ]
+}

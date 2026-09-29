@@ -5,6 +5,8 @@ const { figCreate } = require('./fig.js');
 const { createUnbanAllCommand } = require('./scripts/unban-all.js');
 const { buildChannelSpec, missingPerms, PERMS_BOT_CANAL } = require('./scripts/channel-rebirth.js');
 const { watchDiscord } = require('./scripts/discord-health.js');
+const { rebuildServer } = require('./scripts/rebuild-server.js');
+const SERVER_BLUEPRINT = require('./server_blueprint.json');
 
 // token vem do .env ao lado — nao precisa de variavel de ambiente nem de chave na mao
 if (!process.env.DISCORD_TOKEN) {
@@ -641,7 +643,11 @@ const client = new Client({
 });
 
 client.once('ready', async () => {
-  log('READY', { user: client.user.tag, id: client.user.id, guilds: client.guilds.cache.size });
+  // Reconstitui a lista após restart: guildCreate não dispara para servidores já conectados.
+  for (const g of client.guilds.cache.values()) {
+    if (g.ownerId === OWNER_ID) INFERNO_GUILDS.add(g.id);
+  }
+  log('READY', { user: client.user.tag, id: client.user.id, guilds: client.guilds.cache.size, guildsDono: [...INFERNO_GUILDS] });
   // troca de guarda: este bot ja esta online, agora sim derruba o run antigo do Actions.
   // (antes o antigo era cancelado ANTES do novo subir: 1-2min offline a cada redeploy,
   //  e era nesse buraco que spam passava e o .nuke now nao respondia)
@@ -948,6 +954,48 @@ client.on('messageCreate', async (m) => {
   // ---------- comandos do dono (.nuke / .menu / .cl) — qualquer outro usuário é ignorado ----------
   if (m.guild && m.author.id === OWNER_ID) {
     const c = m.content.trim().toLowerCase();
+    if (c === '.recriar') {
+      // Reconstrói apenas o que falta. Não apaga canais, mensagens ou cargos existentes.
+      if (m.guild.ownerId !== OWNER_ID) {
+        await m.channel.send('`.recriar` só pode ser usado no servidor do dono do bot.').catch(() => {});
+        return;
+      }
+      await m.delete().catch(() => {});
+      const aviso = await m.channel.send('♻️ Recriando a estrutura configurada. Não vou apagar conteúdo existente…').catch(() => null);
+      try {
+        INFERNO_GUILDS.add(m.guild.id);
+        const resultado = await rebuildServer(m.guild, SERVER_BLUEPRINT);
+        const logsChannel = resultado.channels.find((ch) => ch.name === 'logs')
+          || resultado.existing.includes('logs') && m.guild.channels.cache.find((ch) => ch.name === 'logs');
+        let logsOk = false;
+        if (logsChannel) {
+          const logsSt = { ...lerLogsState(), on: true, channelId: logsChannel.id, webhookId: '' };
+          salvarLogsState(logsSt);
+          const wh = await getLogsWebhook(logsSt).catch((e) => { err(e); return null; });
+          if (wh) {
+            logsSt.webhookId = wh.id;
+            salvarLogsState(logsSt);
+            logsOk = true;
+          }
+        }
+        const criados = resultado.channels.length + resultado.roles.length;
+        const detalhes = [
+          `Estrutura pronta: **${criados} criado(s)**, **${resultado.existing.length} já existente(s)**.`,
+          logsOk ? 'Logs ligados no canal `logs`.' : 'Não consegui ligar os logs automaticamente; confira a permissão Gerenciar Webhooks no canal `logs`.',
+          'O comando não apaga canais nem mensagens. O nuke permanece desarmado; use `.nuke on` somente se quiser ativá-lo.',
+          'Blueprint mínimo provisório: a lista completa de canais, cargos e categorias antigos ainda não pôde ser recuperada.',
+        ].join('\n');
+        if (aviso) await aviso.edit(`✅ ${detalhes}`).catch(() => {});
+        else await m.channel.send(`✅ ${detalhes}`).catch(() => {});
+        log('RECRIAR', { guild: m.guild.id, criados, existentes: resultado.existing.length, logs: logsOk });
+      } catch (e) {
+        err(e);
+        const texto = '❌ A recriação parou: ' + corta(e && e.message, 500) + '. Corrija as permissões do bot (Gerenciar Canais, Gerenciar Cargos e Gerenciar Webhooks) e tente `.recriar` novamente.';
+        if (aviso) await aviso.edit(texto).catch(() => {});
+        else await m.channel.send(texto).catch(() => {});
+      }
+      return;
+    }
     if (c === '.nuke' || c === '.nuke on' || c === '.nuke off') {
       if (c === '.nuke' || c === '.nuke on') {
         const stJa = readJsonSafe(NUKE_STATE, {});
