@@ -13,6 +13,7 @@
 //
 //   menor-sexual  -> exploração sexual infantil. É o que derruba servidor na
 //                    hora e o que a polícia recebe. Tolerância zero.
+//   violencia-sexual -> estupro/abuso sexual (termos sem "abuso" puro, sem zoeira).
 //   automutilacao -> incentivo/convite a se machucar ou se matar.
 //   ameaca        -> ameaça de violência a pessoa concreta.
 //  iative         -> (placeholder, ver abaixo)
@@ -37,6 +38,18 @@ const REGRAS = [
     ],
     siglas: ['cp', 'csam', 'csem'],
     regex: [/\bmenor(?:es)?\s+de\s+\d{1,2}\s+anos?\b.{0,40}\b(nu|nua|nude|porn|sexo|sexual)\b/i],
+  },
+  {
+    cat: 'violencia-sexual',
+    cor: 0x8b0000,
+    grave: true,
+    // Sem "abuso" puro: pegaria "abuso de poder". Sem excecao de ZOEIRO.
+    termos: [
+      'estupro', 'estuprar', 'estuprada', 'estuprado', 'estuprador', 'estupradora',
+      'estupradores', 'estuprou', 'estuprando', 'estupra', 'estuprei', 'estuprava',
+      'abusador', 'abusadora', 'abusadores', 'abuso sexual', 'abusei', 'abusou', 'abusava',
+      'rape', 'rapist', 'sexual assault',
+    ],
   },
   {
     cat: 'automutilacao',
@@ -107,6 +120,7 @@ function normalizar(t) {
 }
 // "vou morrer de rir", "me mato demais": nao e automutilacao. Some o qualificador
 // antes de casar os termos, senao o filtro enche o canal de bloqueio.
+// menor-sexual e violencia-sexual NAO passam por essa excecao.
 const ZOEIRO = new RegExp('(?:de rir|demaio|demais|demaisinho|demaiszinhao|tava zoando|ta zoando|zoeira|brincadeira|mentira|so zuera)\\b', 'g');
 const ZOEIRO_TEST = /\b(de rir|demaio|demais|demaisinho|demaiszinhao|tava zoando|ta zoando|zoeira|brincadeira|mentira|so zuera)\b/;
 function normalizarSemZoeira(t) { return normalizar(t).replace(ZOEIRO, ' ').replace(/\s+/g, ' ').trim(); }
@@ -154,7 +168,8 @@ function classificarDenuncia(texto) {
       if (casarSigla(siglasTexto, sigla)) return { cat: regra.cat, cor: regra.cor, grave: !!regra.grave, termo: sigla };
     }
     for (const termo of regra.termos) {
-      if (casa(termo, txt, regra.cat === 'menor-sexual' ? txt : limpo, col, regra.cat !== 'menor-sexual')) return { cat: regra.cat, cor: regra.cor, grave: !!regra.grave, termo };
+      const semZoeira = regra.cat === 'menor-sexual' || regra.cat === 'violencia-sexual';
+      if (casa(termo, txt, semZoeira ? txt : limpo, col, !semZoeira)) return { cat: regra.cat, cor: regra.cor, grave: !!regra.grave, termo };
     }
     for (const rx of (regra.regex || [])) {
       const achou = texto.match(rx);

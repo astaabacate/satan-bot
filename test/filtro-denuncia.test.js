@@ -6,6 +6,9 @@ test('pega as categorias que derrubam servidor', () => {
   assert.equal(classificarDenuncia('isso aqui é pornografia infantil mesmo').cat, 'menor-sexual');
   assert.equal(classificarDenuncia('me manda foto de menor nu').cat, 'menor-sexual');
   assert.equal(classificarDenuncia('menor de 13 anos nua').cat, 'menor-sexual');
+  assert.equal(classificarDenuncia('isso é estupro e crime').cat, 'violencia-sexual');
+  assert.equal(classificarDenuncia('denunciei o abusador dela').cat, 'violencia-sexual');
+  assert.equal(classificarDenuncia('sexual assault is a crime').cat, 'violencia-sexual');
   assert.equal(classificarDenuncia('vou me matar hoje').cat, 'automutilacao');
   assert.equal(classificarDenuncia('vou te matar se você não pagar').cat, 'ameaca');
   assert.equal(classificarDenuncia('manda pix que eu mostro').cat, 'extorsao');
@@ -22,6 +25,10 @@ test('furando filtro: letra trocada, pontuação e zero-width', () => {
   assert.equal(classificarDenuncia('meu cpf: 52998224725').cat, 'dox');
   assert.equal(classificarDenuncia('liga (11) 91234-5678').cat, 'dox');
   assert.equal(classificarDenuncia('meu email é mano@exemplo.com.br').cat, 'dox');
+  assert.equal(classificarDenuncia('abusei').cat, 'violencia-sexual');
+  assert.equal(classificarDenuncia('estuprei').cat, 'violencia-sexual');
+  assert.equal(classificarDenuncia('a.b.u.s.e.i').cat, 'violencia-sexual');
+  assert.equal(classificarDenuncia('3stuprei').cat, 'violencia-sexual');
 });
 
 test('não derruba mensagem normal (falso positivo é o pior erro aqui)', () => {
@@ -31,6 +38,7 @@ test('não derruba mensagem normal (falso positivo é o pior erro aqui)', () => 
     'me mato de rir kkk', 'vou explodir essa foto', 'gorei nesse bottoms',
     'papo de macho', 'aquele jogo é daxo', 'amanhã tem aula', 'bom dia',
     'qualquer coisa me chama', 'to com medo do',
+    'abuso de poder', 'foi abuso de autoridade',
   ]) {
     const r = classificarDenuncia(txt);
     assert.equal(r, null, `falso positivo em: "${txt}" (${r && r.cat})`);
@@ -46,9 +54,10 @@ test('normalização e colado', () => {
 
 test('só o conteúdo mais grave marca como grave (alerta vermelho pro dono)', () => {
   const graves = resumoRegras().filter((r) => r.grave).map((r) => r.cat);
-  assert.deepEqual(graves, ['menor-sexual', 'automutilacao', 'ameaca', 'extorsao']);
+  assert.deepEqual(graves, ['menor-sexual', 'violencia-sexual', 'automutilacao', 'ameaca', 'extorsao']);
   assert.equal(classificarDenuncia('meu cpf é 529.982.247-25').grave, false);
   assert.equal(classificarDenuncia('pornografia infantil').grave, true);
+  assert.equal(classificarDenuncia('estupro').grave, true);
 });
 
 

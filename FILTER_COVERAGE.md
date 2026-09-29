@@ -11,6 +11,7 @@ Apagar na hora conteúdo que faz o Discord derrubar o servidor inteiro e banir o
 | cat | grave | cor | o que derruba |
 |---|---|---|---|
 | `menor-sexual` | sim | `0x8b0000` | exploração sexual infantil (tolerância zero). É o que a polícia recebe. |
+| `violencia-sexual` | sim | `0x8b0000` | estupro/abuso sexual (termos sem “abuso” puro; sem zoeira) |
 | `automutilacao` | sim | `0x8b0000` | incentivo/convite a se machucar ou se matar |
 | `ameaca` | sim | `0xb22222` | ameaça de violência a pessoa concreta |
 | `extorsao` | sim | `0x8b1a1a` | sextorsão / chantagem (ex.: “manda pix que eu mostro”, “vou postar seu nude”) |
@@ -48,7 +49,21 @@ underage, loli, lolicon, shotacon, shota
 + regex: \bmenor(?:es)?\s+de\s+\d{1,2}\s+anos?\b.{0,40}\b(nu|nua|nude|porn|sexo|sexual)\b
 ```
 
-`CP` é bloqueado **independentemente do contexto**, inclusive “CP do pokemon”, “CP brincadeira”. Para essa categoria não há exceção por conter “brincadeira”, “zoeira”, “de rir”, “demais” etc. — a exceção `ZOEIRO` só se aplica às demais categorias (evita apagar “vou morrer de rir”, “me mato de rir kkk”).
+`CP` é bloqueado **independentemente do contexto**, inclusive “CP do pokemon”, “CP brincadeira”. Para essa categoria não há exceção por conter “brincadeira”, “zoeira”, “de rir”, “demais” etc. — a exceção `ZOEIRO` só se aplica às demais categorias (evita apagar “vou morrer de rir”, “me mato de rir kkk”). A `violencia-sexual` também não tem exceção de zoeira.
+
+**Categoria `violencia-sexual` (pt/en):**
+
+```
+estupro, estuprar, estuprada, estuprado, estuprador, estupradora, estupradores,
+estuprou, estuprando, estupra, estuprei, estuprava,
+abusador, abusadora, abusadores, abuso sexual, abusei, abusou, abusava,
+rape, rapist, sexual assault
+```
+
+Sem “abuso” puro para não pegar “abuso de poder”. Categoria `grave` com a mesma
+ação das demais (apagar e avisar o dono, sem mute/timeout/ban). Conjugações em
+1ª pessoa (`abusei`, `estuprei`) caem inclusive ofuscadas pelos mecanismos de
+pontuação/leet: `a.b.u.s.e.i`, `3stuprei` etc.
 
 **Exemplos que caem:**
 
@@ -61,9 +76,16 @@ underage, loli, lolicon, shotacon, shota
 
 ## Ação do bot
 
-- **Apenas** tenta apagar a mensagem e avisa o dono (canal de logs + DM). **Não aplica mute/timeout/ban por filtro**, inclusive `CP`/`CSAM`/`CSEM`. A imunidade do dono (`OWNER_ID`) continua igual.
+- **Apenas** tenta apagar a mensagem e avisa o dono (canal de logs + DM). **Não aplica mute/timeout/ban por filtro**, inclusive `CP`/`CSAM`/`CSEM` e `violencia-sexual`. A imunidade do dono (`OWNER_ID`) continua igual.
 - Flood/spam continua com punições separadas (timeout progressivo de 1h +1h, `mute_state.json`), sem alteração aqui.
 - Categorias, permissões de canais e mensagem de boas-vindas não são alteradas por este filtro.
+
+## Blacklist curada (`blacklist_termos.json`)
+
+`blacklist_termos.json` espelha os termos de detecção do filtro, separados por
+gravidade (`alta` = `grave: true`, `baixa` = o resto). É a referência curada da
+cobertura: **não é lida em runtime** pelo bot. Ao alterar termos, atualizar o
+JSON junto com `scripts/filtro-denuncia.js` e rodar `npm test`.
 
 ## Limitações (importante)
 
@@ -87,7 +109,7 @@ Links reais continuam apagados: `https://…`, `www.…`, `discord.gg/…`, `dis
 
 `npm test` (`node --test`) roda sem Discord/rede:
 
-- `test/filtro-denuncia.test.js` — categorias, leet/pontuação/zero-width, falsos positivos, normalização, graves vs não-graves, siglas `CP/CSAM/CSEM` e termos ampliados.
+- `test/filtro-denuncia.test.js` — categorias (incl. `violencia-sexual`), leet/pontuação/zero-width, falsos positivos, normalização, graves vs não-graves, siglas `CP/CSAM/CSEM` e termos ampliados.
 - `test/link-prose.test.js` — prosa normal não é link, prosa em bloco de código não é link, links reais ainda são pegos, convites obfuscados ainda caem.
 
 Total esperado: **61 testes**.
