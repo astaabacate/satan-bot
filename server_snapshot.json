@@ -1,5 +1,5 @@
 {
-  "salvoEm": "2026-09-29T03:01:57.713Z",
+  "salvoEm": "2026-09-29T03:03:26.183Z",
   "guild": {
     "id": "1554284137261830184",
     "name": "inferno",
@@ -7,17 +7,20 @@
     "ownerId": "1521612392105250836",
     "icon": null,
     "banner": null,
-    "verificationLevel": 0,
+    "verificationLevel": 1,
     "mfaLevel": 0,
-    "explicitContentFilter": 0,
-    "defaultMessageNotifications": 0,
+    "explicitContentFilter": 2,
+    "defaultMessageNotifications": 1,
     "systemChannelId": "1554323717088354456",
-    "rulesChannelId": null,
-    "publicUpdatesChannelId": null,
+    "rulesChannelId": "1554327593245745162",
+    "publicUpdatesChannelId": "1554327593245745166",
     "preferredLocale": "en-US",
     "premiumTier": 0,
     "premiumSubscriptionCount": 0,
-    "features": []
+    "features": [
+      "NEWS",
+      "COMMUNITY"
+    ]
   },
   "categorias": [
     {
@@ -72,24 +75,6 @@
       "userLimit": 0
     },
     {
-      "id": "1554323715892715575",
-      "name": "bump",
-      "type": 0,
-      "parentId": null,
-      "position": 1,
-      "topic": null,
-      "nsfw": false,
-      "rateLimitPerUser": 0,
-      "overwrites": [
-        {
-          "id": "1554284378803281931",
-          "type": 0,
-          "allow": "536996864",
-          "deny": "0"
-        }
-      ]
-    },
-    {
       "id": "1554323719634026547",
       "name": "gf",
       "type": 2,
@@ -108,6 +93,24 @@
       ],
       "bitrate": 64000,
       "userLimit": 0
+    },
+    {
+      "id": "1554327593245745162",
+      "name": "rules",
+      "type": 0,
+      "parentId": null,
+      "position": 1,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "3072"
+        }
+      ]
     },
     {
       "id": "1554323720368038021",
@@ -130,12 +133,30 @@
       "userLimit": 0
     },
     {
-      "id": "1554323717796921364",
-      "name": "logs",
+      "id": "1554327593245745166",
+      "name": "moderator-only",
       "type": 0,
       "parentId": null,
       "position": 2,
-      "topic": "canal de logs do bot (webhook Satan Logs 1551879675306049596)",
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "1024"
+        }
+      ]
+    },
+    {
+      "id": "1554323715892715575",
+      "name": "bump",
+      "type": 0,
+      "parentId": null,
+      "position": 3,
+      "topic": null,
       "nsfw": false,
       "rateLimitPerUser": 0,
       "overwrites": [
@@ -166,6 +187,24 @@
       ],
       "bitrate": 64000,
       "userLimit": 0
+    },
+    {
+      "id": "1554323717796921364",
+      "name": "logs",
+      "type": 0,
+      "parentId": null,
+      "position": 4,
+      "topic": "canal de logs do bot (webhook Satan Logs 1551879675306049596)",
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "536996864",
+          "deny": "0"
+        }
+      ]
     },
     {
       "id": "1554323721874047147",
