@@ -4,6 +4,8 @@
 // (a Community Guidelines/T&S costuma banir o owner junto com o servidor).
 // Denúncia em massa de quem acabou de ser banido é o caminho mais comum pra
 // isso acontecer em minutos, e o print que a pessoa levou continua valendo.
+// Cobertura e limitações detalhadas em FILTER_COVERAGE.md. Ação: apenas apaga
+// e avisa o dono, sem mute/timeout/ban (inclusive CP/CSAM/CSEM).
 //
 // Categorias (Community Guidelines + o que o Discord remove ativamente no
 // Brasil: automutilação, exploração sexual infantil, violência extrema,

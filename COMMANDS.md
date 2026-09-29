@@ -43,10 +43,10 @@ espaços, pontuação e caracteres invisíveis, sem bloquear `CPF`, `TCP` ou `SC
 `CP` é bloqueado independentemente do contexto (inclusive jogos). Termos dessa
 categoria não recebem exceção por conterem “brincadeira” ou “zoeira”.
 
-A ação continua sendo a já configurada para `menor-sexual`: tentativa de apagar,
-aviso ao dono e castigo. O filtro não analisa imagens/vídeos, não distingue
+A ação para qualquer categoria, inclusive `menor-sexual`/`CP`: tentativa de apagar
+a mensagem e aviso ao dono, **sem mute/timeout/ban**. O filtro não analisa imagens/vídeos, não distingue
 conversas educativas de outras menções e não garante detectar toda variação.
-A imunidade do dono existente no bot não foi alterada.
+A imunidade do dono existente no bot não foi alterada. Cobertura e limitações detalhadas em `FILTER_COVERAGE.md`.
 
-Para ativar: publicar `scripts/filtro-denuncia.js` na versão de produção e
+Para ativar: publicar `bot.js` junto com `scripts/filtro-denuncia.js` na versão de produção e
 reiniciar o bot. Alterações apenas na branch de trabalho não ativam o filtro.
