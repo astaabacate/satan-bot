@@ -8,6 +8,12 @@ const OWNER_ID = '1521612392105250836';
 const base = 'https://discord.com/api/v10';
 const token = process.env.DISCORD_TOKEN;
 const apply = process.env.MAINTENANCE_APPLY === 'true';
+// Anotações acessíveis pela API de checks, sem conteúdo das mensagens ou credenciais.
+const originalLog = console.log;
+console.log = (...args) => {
+  const text = args.join(' ').replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+  originalLog(`::notice::${text}`);
+};
 
 async function request(endpoint, method = 'GET', body) {
   const response = await fetch(base + endpoint, {
