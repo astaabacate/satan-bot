@@ -25,6 +25,25 @@ function runIsUsable(run, jobs, now) {
   });
 }
 
+const DISCORD_ME = 'https://discord.com/api/v10/users/@me';
+
+// Token morto nao se conserta com restart (incidente de 29/09/2026: o secret
+// ficou com um token resetado e o watchdog disparava substituto para sempre).
+// Falha de consulta (rede, DNS, 429, 5xx) NAO conta como token invalido: so
+// 401/403 dizem "o token nao vale mais".
+async function tokenDiscordValido(token, fetchImpl = fetch) {
+  if (!token) return false;
+  try {
+    const resposta = await fetchImpl(DISCORD_ME, {
+      headers: { Authorization: `Bot ${token}` },
+      signal: AbortSignal.timeout(20_000),
+    });
+    return resposta.status !== 401 && resposta.status !== 403;
+  } catch {
+    return true;
+  }
+}
+
 async function checkBot(api, now = Date.now()) {
   const data = await api('GET', '/actions/workflows/satan.yml/runs?branch=main&per_page=100');
   const runs = data.workflow_runs.filter(r => r.head_branch === 'main');
@@ -63,6 +82,10 @@ async function main() {
     if (!response.ok) throw new Error(`GitHub ${method} ${endpoint}: HTTP ${response.status}`);
     return response.status === 204 ? null : response.json();
   };
+  if (!(await tokenDiscordValido(process.env.DISCORD_TOKEN))) {
+    console.log('[watchdog] DISCORD_TOKEN invalido (HTTP 401/403): nao vou religar o bot — troque o secret em Settings > Secrets and variables > Actions > DISCORD_TOKEN com o token atual do Developer Portal e rode o workflow satan de novo.');
+    return;
+  }
   console.log(`[watchdog] ${await checkBot(api)}`);
 }
 
@@ -70,4 +93,4 @@ if (require.main === module) main().catch(error => {
   console.error(error.message);
   process.exitCode = 1;
 });
-module.exports = { runIsUsable, checkBot, BOT_STEP };
+module.exports = { runIsUsable, checkBot, tokenDiscordValido, BOT_STEP };
