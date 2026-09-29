@@ -18,7 +18,7 @@ const snap = {
 function fakeGuild() {
   const canais = new Map();
   const cargos = new Map();
-  const estado = { sistema: null, perms: [], apagados: [], pins: 0, posts: 0 };
+  const estado = { sistema: null, perms: [], apagados: [], pins: 0, posts: 0, ordem: [] };
   let seq = 0;
   // o spec do create vem por ultimo, mas as sobrescritas do fake (metodo .edit)
   // precisam vencer o array permissionOverwrites que vem no spec
@@ -34,6 +34,8 @@ function fakeGuild() {
     id: 'g-novo', estado, cargos,
     channels: {
       cache: canais,
+      fetch: async () => canais,
+      setPositions: async (lista) => { estado.ordem.push(lista); },
       create: async (spec) => { const n = deco('novo-' + (seq++), spec); canais.set(n.id, n); return n; },
     },
     roles: { create: async (spec) => { const c = { id: 'cargo-' + cargos.size, ...spec }; cargos.set(c.id, c); return c; } },
@@ -121,6 +123,18 @@ test('modo normal (sem limpar) so apaga o que o Discord cria sozinho', async () 
   assert.equal(g.channels.cache.has('meu-memes'), true);
   assert.equal(g.channels.cache.has('general'), false);
   assert.equal(rel.apagados, 1);
+});
+
+test('recriar tambem deixa o inferno em primeiro e o confessionario em segundo', async () => {
+  const g = fakeGuild();
+  // canal inferno existente, mas depois de tudo (o rebuild copia position e o
+  // Discord nao renumera: sem o reindex o confessionario fica na frente dele)
+  g.add('inf', { name: 'inferno', type: 0, position: 9 });
+  const rel = await configurarServidor(g, snap, { nukeState: null });
+  assert.deepEqual(rel.ordem, ['inferno', '・confessionario', 'logs-do-satan', 'painel', 'bump', 'purgatorio']);
+  assert.equal(g.estado.ordem.length, 1); // um PATCH so
+  assert.deepEqual(g.estado.ordem[0].map((p) => p.channel), ['inf', 'novo-0', 'novo-1', 'novo-2', 'novo-3', 'novo-4']);
+  assert.deepEqual(g.estado.ordem[0].map((p) => p.position), [0, 1, 2, 3, 4, 5]);
 });
 
 test('setup nao mexe em quem ja estava certo (painel vivo) e nao quebra sem blueprint', async () => {

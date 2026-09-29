@@ -4,7 +4,8 @@
     "Fontes: nuke_log.json (canais de voz + confessionario, 28/09 19:44 BRT), logs_state.json, bump_state.json, nuke_state.json, bot.js.",
     "Cargos, categorias, nomes de alguns canais de texto e as permissoes originais NUNCA foram persistidos em lugar nenhum — preencha o que souber antes de usar o .recriar.",
     "Canais com nome entre <> sao chutes/placeholder (so o ID era conhecido).",
-    "Onde esta o historico de mensagens e o que aconteceu na queda: logs das execucoes do GitHub Actions (sessao nova para extrair)."
+    "Onde esta o historico de mensagens e o que aconteceu na queda: logs das execucoes do GitHub Actions (sessao nova para extrair).",
+    "Limite das calls (userLimit) segue a escada do inferno: purgatorio sem limite (0) e o resto subindo de 1 em 1 na ordem da lista (gf 2, conclave 3, ritual 4, tormento 5, sacrificio 6, santuario 7, apocalipse 8, caos 9). Vale tambem mandar .call limite escada no servidor."
   ],
   "salvoEm": "reconstrucao-manual-2026-09-28",
   "guild": {
@@ -23,16 +24,16 @@
     { "id": "1554262568913076386", "name": "・confessionario", "papel": "sistema", "type": 0, "parentId": null, "position": 1, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "overwrites": [] },
     { "id": "1551879495298842715", "name": "<logs>", "papel": "logs", "type": 0, "parentId": null, "position": 2, "topic": "canal de logs do bot (webhook Satan Logs 1551879675306049596)", "nsfw": false, "rateLimitPerUser": 0, "overwrites": [] },
     { "id": "1548910505500868709", "name": "<painel>", "papel": "painel", "type": 0, "parentId": null, "position": 3, "topic": "canal do painel do nuke (.nuke / .menu)", "nsfw": false, "rateLimitPerUser": 0, "overwrites": [] },
-    { "id": "old-vc-01", "name": "purgatorio", "type": 2, "parentId": null, "position": 4, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "overwrites": [] },
-    { "id": "old-vc-02", "name": "gf", "type": 2, "parentId": null, "position": 5, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "overwrites": [] },
-    { "id": "old-vc-03", "name": "gf", "type": 2, "parentId": null, "position": 6, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "overwrites": [] },
-    { "id": "old-vc-04", "name": "conclave", "type": 2, "parentId": null, "position": 7, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "overwrites": [] },
-    { "id": "old-vc-05", "name": "ritual", "type": 2, "parentId": null, "position": 8, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "overwrites": [] },
-    { "id": "old-vc-06", "name": "tormento", "type": 2, "parentId": null, "position": 9, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "overwrites": [] },
-    { "id": "old-vc-07", "name": "sacrificio", "type": 2, "parentId": null, "position": 10, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "overwrites": [] },
-    { "id": "old-vc-08", "name": "santuario", "type": 2, "parentId": null, "position": 11, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "overwrites": [] },
-    { "id": "old-vc-09", "name": "apocalipse", "type": 2, "parentId": null, "position": 12, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "overwrites": [] },
-    { "id": "old-vc-10", "name": "caos", "type": 2, "parentId": null, "position": 13, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "overwrites": [] }
+    { "id": "old-vc-01", "name": "purgatorio", "type": 2, "parentId": null, "position": 4, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "userLimit": 0, "overwrites": [] },
+    { "id": "old-vc-02", "name": "gf", "type": 2, "parentId": null, "position": 5, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "userLimit": 2, "overwrites": [] },
+    { "id": "old-vc-03", "name": "gf", "type": 2, "parentId": null, "position": 6, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "userLimit": 2, "overwrites": [] },
+    { "id": "old-vc-04", "name": "conclave", "type": 2, "parentId": null, "position": 7, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "userLimit": 3, "overwrites": [] },
+    { "id": "old-vc-05", "name": "ritual", "type": 2, "parentId": null, "position": 8, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "userLimit": 4, "overwrites": [] },
+    { "id": "old-vc-06", "name": "tormento", "type": 2, "parentId": null, "position": 9, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "userLimit": 5, "overwrites": [] },
+    { "id": "old-vc-07", "name": "sacrificio", "type": 2, "parentId": null, "position": 10, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "userLimit": 6, "overwrites": [] },
+    { "id": "old-vc-08", "name": "santuario", "type": 2, "parentId": null, "position": 11, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "userLimit": 7, "overwrites": [] },
+    { "id": "old-vc-09", "name": "apocalipse", "type": 2, "parentId": null, "position": 12, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "userLimit": 8, "overwrites": [] },
+    { "id": "old-vc-10", "name": "caos", "type": 2, "parentId": null, "position": 13, "topic": null, "nsfw": false, "rateLimitPerUser": 0, "userLimit": 9, "overwrites": [] }
   ],
   "cargos": [],
   "emojis": [],

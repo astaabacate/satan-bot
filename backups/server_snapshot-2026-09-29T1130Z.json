@@ -1,0 +1,469 @@
+{
+  "salvoEm": "2026-09-29T11:30:36.277Z",
+  "guild": {
+    "id": "1554284137261830184",
+    "name": "inferno",
+    "description": "único server sem regras que não cai.",
+    "ownerId": "1521612392105250836",
+    "icon": "8b1e936e3696e9b5b222ec61aaefe918",
+    "banner": null,
+    "verificationLevel": 1,
+    "mfaLevel": 0,
+    "explicitContentFilter": 2,
+    "defaultMessageNotifications": 1,
+    "systemChannelId": "1554455227250376767",
+    "rulesChannelId": "1554327593245745162",
+    "publicUpdatesChannelId": "1554327593245745166",
+    "preferredLocale": "en-US",
+    "premiumTier": 0,
+    "premiumSubscriptionCount": 0,
+    "features": [
+      "NEWS",
+      "COMMUNITY"
+    ]
+  },
+  "categorias": [
+    {
+      "id": "1554329873089175582",
+      "name": "・",
+      "type": 4,
+      "parentId": null,
+      "position": 0,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": []
+    },
+    {
+      "id": "1554324703282466816",
+      "name": "・",
+      "type": 4,
+      "parentId": null,
+      "position": 1,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": []
+    }
+  ],
+  "canais": [
+    {
+      "id": "1554455227250376767",
+      "name": "confessionario",
+      "type": 0,
+      "parentId": "1554329873089175582",
+      "position": 0,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "68608",
+          "deny": "4047287806783568"
+        },
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "536996864",
+          "deny": "0"
+        },
+        {
+          "id": "1539465305326227477",
+          "type": 1,
+          "allow": "536996864",
+          "deny": "0"
+        }
+      ]
+    },
+    {
+      "id": "1554323719009083394",
+      "name": "purgatorio",
+      "type": 2,
+      "parentId": "1554324703282466816",
+      "position": 0,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "2048"
+        },
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "556919824",
+          "deny": "0"
+        }
+      ],
+      "bitrate": 64000,
+      "userLimit": 0
+    },
+    {
+      "id": "1554327593245745162",
+      "name": "rules",
+      "type": 0,
+      "parentId": null,
+      "position": 0,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "3072"
+        }
+      ]
+    },
+    {
+      "id": "1554323719634026547",
+      "name": "gf",
+      "type": 2,
+      "parentId": "1554324703282466816",
+      "position": 1,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "2048"
+        },
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "556919824",
+          "deny": "0"
+        }
+      ],
+      "bitrate": 64000,
+      "userLimit": 0
+    },
+    {
+      "id": "1554329873961590788",
+      "name": "inferno",
+      "type": 0,
+      "parentId": "1554329873089175582",
+      "position": 1,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "66560",
+          "deny": "4047287806785616"
+        },
+        {
+          "id": "1539465305326227477",
+          "type": 1,
+          "allow": "536996864",
+          "deny": "0"
+        }
+      ]
+    },
+    {
+      "id": "1554327593245745166",
+      "name": "moderator-only",
+      "type": 0,
+      "parentId": null,
+      "position": 1,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "1024"
+        }
+      ]
+    },
+    {
+      "id": "1554323715892715575",
+      "name": "bump",
+      "type": 0,
+      "parentId": "1554329873089175582",
+      "position": 2,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "1024"
+        },
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "536996864",
+          "deny": "0"
+        },
+        {
+          "id": "1539465305326227477",
+          "type": 1,
+          "allow": "536996864",
+          "deny": "0"
+        }
+      ]
+    },
+    {
+      "id": "1554323720368038021",
+      "name": "conclave",
+      "type": 2,
+      "parentId": "1554324703282466816",
+      "position": 2,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "2048"
+        },
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "556919824",
+          "deny": "0"
+        }
+      ],
+      "bitrate": 64000,
+      "userLimit": 0
+    },
+    {
+      "id": "1554323717796921364",
+      "name": "logs",
+      "type": 0,
+      "parentId": "1554329873089175582",
+      "position": 3,
+      "topic": "canal de logs do bot (webhook Satan Logs 1551879675306049596)",
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "1024"
+        },
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "536996864",
+          "deny": "0"
+        },
+        {
+          "id": "1539465305326227477",
+          "type": 1,
+          "allow": "536996864",
+          "deny": "0"
+        }
+      ]
+    },
+    {
+      "id": "1554323721060352132",
+      "name": "ritual",
+      "type": 2,
+      "parentId": "1554324703282466816",
+      "position": 3,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "2048"
+        },
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "556919824",
+          "deny": "0"
+        }
+      ],
+      "bitrate": 64000,
+      "userLimit": 0
+    },
+    {
+      "id": "1554323721874047147",
+      "name": "tormento",
+      "type": 2,
+      "parentId": "1554324703282466816",
+      "position": 4,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "2048"
+        },
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "556919824",
+          "deny": "0"
+        }
+      ],
+      "bitrate": 64000,
+      "userLimit": 0
+    },
+    {
+      "id": "1554323722717106297",
+      "name": "sacrificio",
+      "type": 2,
+      "parentId": "1554324703282466816",
+      "position": 5,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "2048"
+        },
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "556919824",
+          "deny": "0"
+        }
+      ],
+      "bitrate": 64000,
+      "userLimit": 0
+    },
+    {
+      "id": "1554323727615926364",
+      "name": "santuario",
+      "type": 2,
+      "parentId": "1554324703282466816",
+      "position": 6,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "2048"
+        },
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "556919824",
+          "deny": "0"
+        }
+      ],
+      "bitrate": 64000,
+      "userLimit": 0
+    },
+    {
+      "id": "1554323729134256128",
+      "name": "apocalipse",
+      "type": 2,
+      "parentId": "1554324703282466816",
+      "position": 7,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "2048"
+        },
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "556919824",
+          "deny": "0"
+        }
+      ],
+      "bitrate": 64000,
+      "userLimit": 0
+    },
+    {
+      "id": "1554323729780310077",
+      "name": "caos",
+      "type": 2,
+      "parentId": "1554324703282466816",
+      "position": 8,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "2048"
+        },
+        {
+          "id": "1554284378803281931",
+          "type": 0,
+          "allow": "556919824",
+          "deny": "0"
+        }
+      ],
+      "bitrate": 64000,
+      "userLimit": 0
+    }
+  ],
+  "cargos": [
+    {
+      "id": "1554284378803281931",
+      "name": "Satan",
+      "color": 1,
+      "hoist": false,
+      "position": 2,
+      "permissions": "8",
+      "mentionable": false,
+      "managed": true
+    },
+    {
+      "id": "1554339523423502430",
+      "name": ".",
+      "color": 1,
+      "hoist": false,
+      "position": 1,
+      "permissions": "19473",
+      "mentionable": false,
+      "managed": true
+    },
+    {
+      "id": "1554284137261830184",
+      "name": "@everyone",
+      "color": 0,
+      "hoist": false,
+      "position": 0,
+      "permissions": "141154204322817",
+      "mentionable": false,
+      "managed": false
+    }
+  ],
+  "emojis": [],
+  "stickers": []
+}

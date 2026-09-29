@@ -38,6 +38,83 @@ Procedimento quando o Actions mostrar `DISCORD_TOKEN inválido`:
 5. Nunca colar o token no código, em issue, em chat ou em arquivo do repositório
    (ele é público): só no secret. Token que vazou deve ser resetado.
 
+## Correção de 29/09/2026 (confessionario renascia em cima do inferno)
+
+A cada nuke horário o ・confessionario voltava **acima** do canal `inferno`. A
+ordem certa é inferno em primeiro, confessionario em segundo.
+
+Causa: o nuke apaga o canal e recria passando `position: f.position`. Só que
+`f.position` é o índice **calculado pelo discord.js** dentro da categoria (0, 1,
+2...), não a posição bruta que o Discord usa para ordenar. O Discord não renumera
+as posições quando um canal é apagado — sobram buracos (ex.: 0, 5, 7, 8) — então
+um índice pequeno nasce antes de todo mundo.
+
+Correção (`scripts/channel-order.js`): depois de criar o canal, a ordem é
+aplicada de forma explícita — **inferno primeiro, confessionario logo abaixo,
+resto como estava** — com um único PATCH reindexando os irmãos (0..n-1). Se não
+existir canal `inferno` entre os irmãos, nada é mexido. Vale para o nuke, para o
+`.recriar` (`scripts/setup-servidor.js`) e para cada boot do bot (senão o conserto
+só apareceria no nuke seguinte, até 1h depois do deploy). O resultado aparece em
+`nuke_log.json` (campo `ordem`) e a regressão está em `test/channel-order.test.js`.
+
+## Canais que somem: como restaurar (`.restaurar`)
+
+Em 29/09 os canais de voz do servidor oficial sumiram, sobrando 2. **Nenhum
+código do bot apaga canal de voz**: a única linha que apaga canal é o
+`f.delete()` do confessionário no nuke. Os caminhos que apagam em massa são:
+
+- `.recriar limpo` / `.recriar refazer` — apaga tudo cujo **nome** não está em
+  `server_blueprint.json` (os 9 nomes de voz estão lá; cairiam fora as
+  categorias `・`, `inferno`, `rules`, `logs` e `moderator-only`).
+- Alguém com **Gerenciar canais** apagando na mão.
+
+Para voltar o que sumiu (sem apagar nada do que ficou):
+
+```text
+.restaurar          # recria tudo que está no backup e não existe mais
+.restaurar voz      # só os canais de voz
+.restaurar de backups/server_snapshot-2026-09-29T1130Z.json   # backup específico
+```
+
+O restore (`scripts/restaurar-canais.js`) cria **só** o que falta, dentro da
+categoria original, com as permissões/overwrites do backup, e devolve a ordem
+original da categoria. Não cria cargo (o servidor é o mesmo: os ids das
+overwrites continuam valendo) e não apaga nada.
+
+O backup é o `server_snapshot.json`, que o bot reescreve sozinho a cada mudança
+de estrutura. Cópia com data em `backups/` serve de segurança.
+
+Limite de pessoas por call (o restore copia o `userLimit` do backup; `0` =
+sem limite):
+
+A regra do inferno é a **escada**: a primeira call (`purgatorio`) fica sem limite
+e as outras sobem de 1 em 1 conforme descem na lista — `gf` 2, `conclave` 3,
+`ritual` 4, `tormento` 5, `sacrificio` 6, `santuario` 7, `apocalipse` 8, `caos` 9.
+
+```text
+.call limite escada      # aplica a escada inteira (é o que vale aqui)
+.call limite escada 5    # mesma coisa começando em 5 na segunda call
+.call limite 99          # todas as calls
+.call limite 99 gf caos  # só essas duas
+.call limite gf=2 caos=10 purgatorio=99   # cada call com o seu
+.call limite 0           # volta pro sem limite
+```
+
+A escada usa a ordem real das calls no servidor (posição dentro da categoria) e
+pula a call que já está no valor, então pode rodar quantas vezes quiser.
+
+O valor fica gravado no backup, então o próximo `.restaurar` já traz o limite
+certo. Vale também pôr o `userLimit` nos canais de voz do
+`server_blueprint.json` se quiser que o `.recriar` já nasça com ele (o blueprint
+da reconstrução de 28/09 não tinha esse campo — foi por isso que as calls
+voltaram sem limite naquela rebuild).
+
+Proteção nova: `salvarSnapshot` **recusa** sobrescrever o backup quando o novo
+snapshot tem **menos** canais que o salvo (`SNAPSHOT_RECUSADO` no log). Sem isso,
+o boot seguinte ao incidente jogaria fora justamente o backup que permite
+restaurar. Se você apagou canais de propósito e quer atualizar o backup:
+`.snapshot agora`.
+
 ## Incidente de 27/09/2026 (spam não apagado)
 
 Em 27/09 entre 19:27–19:29 BRT houve flood no ・confessionario (mesma mensagem

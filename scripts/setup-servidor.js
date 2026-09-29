@@ -4,6 +4,7 @@
 // morreram com ele) e posta o texto de boas-vindas do inferno.
 const { rebuildServer } = require('./rebuild-server.js');
 const { PERMS_BOT_CANAL } = require('./channel-rebirth.js');
+const { garantirOrdemInferno } = require('./channel-order.js');
 
 const PERMS_BOT_VOZ = { ...PERMS_BOT_CANAL, Connect: true, Speak: true, MoveMembers: true, ManageChannels: true };
 
@@ -61,6 +62,15 @@ async function configurarServidor(guild, snap, deps = {}) {
   if (sysNovo) {
     await guild.setSystemChannel(sysNovo).catch((e) => rel.erros.push('system channel: ' + ((e && e.message) || e)));
     rel.sistema = sysNovo;
+    // mesma ordem do nuke: inferno em primeiro, confessionario logo abaixo.
+    // recriar copiando position nao garante nada (o Discord nao renumera as
+    // posicoes quando um canal e apagado), entao a ordem e aplicada explicitamente.
+    const ch = guild.channels.cache.get(sysNovo);
+    if (ch) {
+      const ord = await garantirOrdemInferno(guild, ch, { log });
+      rel.ordem = ord.ordem;
+      if (!ord.ok && ord.erro) rel.erros.push('ordem: ' + ord.erro);
+    }
   }
 
   // 4) apaga o que sobrou: por so os canais padrao do Discord, ou TUDO que nao

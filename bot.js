@@ -4,6 +4,10 @@ const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { figCreate } = require('./fig.js');
 const { createUnbanAllCommand } = require('./scripts/unban-all.js');
 const { buildChannelSpec, missingPerms, PERMS_BOT_CANAL } = require('./scripts/channel-rebirth.js');
+const { garantirOrdemInferno, irmaosOrdenados, posicaoDoConfessionario } = require('./scripts/channel-order.js');
+const { restaurarCanais } = require('./scripts/restaurar-canais.js');
+const { aplicarLimitesVoz, parsearCallLimite, planoEscada, ehEscada } = require('./scripts/call-limite.js');
+const { adicionarPalavras, removerPalavras, listarPalavras, casarPalavras, registrarUso, separarTermos } = require('./scripts/blacklist-palavras.js');
 const { snapshotGuild } = require('./scripts/server-snapshot.js');
 const { rebuildServer } = require('./scripts/rebuild-server.js');
 const { configurarServidor } = require('./scripts/setup-servidor.js');
@@ -104,6 +108,7 @@ const penaltyUntil = new Map();
 const MUTE_STATE = path.join(ROOT, 'mute_state.json');
 const LOGS_STATE = path.join(ROOT, 'logs_state.json');
 const BLACKLIST_STATE = path.join(ROOT, 'blacklist_state.json');
+const PALAVRAS_STATE = path.join(ROOT, 'blacklist_palavras.json'); // palavras bloqueadas pelo dono (.bloquear)
 const MUTE_BASE_MS = 60 * 60 * 1000;
 const REP_MUTE_QTD = 10;
 const repStreak = new Map(); // userId -> { sig, count }
@@ -305,6 +310,14 @@ function menuMsg() {
               '',
               '**`.desbanir todos`** (pede confirmação)',
               '',
+              '**`.restaurar`** / **`.restaurar voz`** (volta o que sumiu pelo backup)',
+              '',
+              '**`.call limite 99`** (pessoas por call; `0` = sem limite)',
+              '',
+              '**`.bloquear`** / **`.desbloquear`** / **`.bloqueios`** (palavras)',
+              '',
+              '**`.snapshot agora`** (força o backup)',
+              '',
               '**`.bump`**',
               '',
               '**`.logs on / off`**',
@@ -457,6 +470,27 @@ function blacklistAdd(userId, dados = {}) {
   st.users[userId] = { userId, ...st.users[userId], ...dados, atualizadoEm: new Date().toISOString() };
   salvarBlacklist(st);
   return st.users[userId];
+}
+// palavras bloqueadas pelo dono: lista dele, mexida por comando, sem redeploy.
+// cache por mtime: o teste roda em TODA mensagem, nao da pra reler o json sempre
+let palavrasCache = null;
+let palavrasCacheMtime = 0;
+function lerPalavrasBloqueadas() {
+  try {
+    const stt = fs.statSync(PALAVRAS_STATE);
+    if (palavrasCache && stt.mtimeMs === palavrasCacheMtime) return palavrasCache;
+    palavrasCache = readJsonSafe(PALAVRAS_STATE, { palavras: {} });
+    palavrasCacheMtime = stt.mtimeMs;
+    return palavrasCache;
+  } catch {
+    return (palavrasCache = readJsonSafe(PALAVRAS_STATE, { palavras: {} }));
+  }
+}
+function salvarPalavras(st) {
+  fs.writeFileSync(PALAVRAS_STATE, JSON.stringify(st, null, 2));
+  palavrasCache = st;
+  try { palavrasCacheMtime = fs.statSync(PALAVRAS_STATE).mtimeMs; } catch { palavrasCacheMtime = 0; }
+  ghStateSyncTick();
 }
 function blacklistDel(userId) {
   const st = lerBlacklist();
@@ -701,6 +735,12 @@ client.once('ready', async () => {
   }
   const gSnap = client.guilds.cache.get(GUILD_OFICIAL) || client.guilds.cache.find((g) => g.ownerId === OWNER_ID) || client.guilds.cache.first();
   if (gSnap) salvarSnapshot(gSnap).catch(err); // backup da estrutura do servidor ao ligar
+  // ordem dos canais (inferno em primeiro, confessionario em segundo) tambem no
+  // boot: senao o conserto so apareceria no proximo nuke, ate 1h depois do deploy
+  if (gSnap) {
+    const confBoot = [...gSnap.channels.cache.values()].find((c) => /confessionar/i.test(c.name || ''));
+    if (confBoot) garantirOrdemInferno(gSnap, confBoot, { log }).catch(err);
+  }
   // servidor novo SEM NENHUM canal do blueprint (bot ja entrou antes do setup):
   // configura sozinho. Se ja tem canal do blueprint, é o servidor de sempre e
   // nao mexe - recriar canal que o dono apagou de propósito é chato.
@@ -910,7 +950,7 @@ client.on('typingStart', async (t) => {
 
 
 // ---------- estado persistente no repo GitHub (sobrevive a religadas/updates) ----------
-const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'logs_state.json', 'blacklist_state.json', 'server_snapshot.json'];
+const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'logs_state.json', 'blacklist_state.json', 'blacklist_palavras.json', 'server_snapshot.json'];
 async function ghStateLoad() {
   const tok = process.env.GITHUB_TOKEN, repo = process.env.GITHUB_REPOSITORY;
   if (!tok || !repo) return;
@@ -954,13 +994,29 @@ setInterval(ghStateSyncTick, 60 * 1000);
 // git vira backup. (incidente 28/09: os servidores cairam e nada disso existia
 // em lugar nenhum - so os logs do runner, sem acesso facil.)
 const SNAPSHOT = path.join(ROOT, 'server_snapshot.json');
-async function salvarSnapshot(guild) {
+// quantos canais+categorias um snapshot conhece (serve pra comparar versoes)
+function qtdCanaisSnap(s) {
+  if (!s || !Array.isArray(s.canais)) return 0;
+  return s.canais.length + (Array.isArray(s.categorias) ? s.categorias.length : 0);
+}
+async function salvarSnapshot(guild, { forcado = false } = {}) {
   try {
     const snap = snapshotGuild(guild, { salvoEm: new Date().toISOString() });
+    // NAO deixa um snapshot pior sobrescrever o backup bom: se sumiram canais
+    // (alguem apagou, raid, bug), o backup com a estrutura completa é justamente
+    // o que permite restaurar depois. Sem isso, o proximo boot do bot jogaria
+    // fora o unico backup que ainda tem os canais. Pra atualizar de propósito
+    // (ex.: apagou canal que queria mesmo apagar): .snapshot agora
+    const anterior = readJsonSafe(SNAPSHOT, null);
+    if (!forcado && qtdCanaisSnap(anterior) > qtdCanaisSnap(snap)) {
+      log('SNAPSHOT_RECUSADO', { salvo: qtdCanaisSnap(anterior), novo: qtdCanaisSnap(snap), salvoEm: anterior && anterior.salvoEm });
+      return 'recusado';
+    }
     fs.writeFileSync(SNAPSHOT, JSON.stringify(snap, null, 2));
     ghStateSyncTick();
     log('SNAPSHOT_SALVO', { guild: guild.id, nome: guild.name, canais: snap.canais.length + snap.categorias.length, cargos: snap.cargos.length });
-  } catch (e) { err(e); }
+    return 'salvo';
+  } catch (e) { err(e); return 'erro'; }
 }
 const snapshotTimer = new Map(); // guildId -> timer (agrupa rajadas de mudancas)
 
@@ -1107,6 +1163,170 @@ client.on('messageCreate', async (m) => {
         ].filter(Boolean).join('\n')).catch(() => {});
         return;
       }
+    // ---------- .restaurar: volta o que sumiu (ex.: apagaram os canais de voz) ----------
+    if (c === '.restaurar' || c.startsWith('.restaurar ')) {
+      // cria SÓ o que não existe mais, dentro da categoria original e com as
+      // permissões do backup — nunca apaga nada (quem apaga é o .recriar limpo)
+      await m.delete().catch(() => {});
+      const soVoz = /voz|call|voice/.test(c);
+      // `.restaurar de backups/arquivo.json` usa um backup especifico (util se o
+      // server_snapshot.json mais novo ja estiver sem os canais)
+      const alvo = (c.match(/\bde\s+([\w.\-/]+\.json)/) || [])[1];
+      let snap = null;
+      if (alvo) {
+        const p = path.join(ROOT, alvo.replace(/^[/\\]+/, ''));
+        if (!p.startsWith(ROOT + path.sep)) {
+          await whSend(m.channel, 'esse arquivo está fora da pasta do bot.').catch(() => {});
+          return;
+        }
+        snap = readJsonSafe(p, null);
+      } else {
+        snap = readJsonSafe(SNAPSHOT, null);
+      }
+      if (!snap || !Array.isArray(snap.canais)) {
+        await whSend(m.channel, 'não achei o backup' + (alvo ? ` \`${alvo}\`` : ' `server_snapshot.json`') + ' (ou ele está vazio).').catch(() => {});
+        return;
+      }
+      await whSend(m.channel, (soVoz
+        ? '**Restaurando os canais de voz** que sumiram'
+        : '**Restaurando o que sumiu**') + ` a partir de \`${alvo || 'server_snapshot.json'}\` (nada é apagado)...`).catch(() => {});
+      const r = await restaurarCanais(m.guild, snap, { log, tipos: soVoz ? [2] : null })
+        .catch((e) => { err(e); return { categorias: [], canais: [], pulados: 0, ordem: [], semPermissao: [], erros: [String(e && e.message)] }; });
+      const criados = (r.categorias || []).length + (r.canais || []).length;
+      await whSend(m.channel, [
+        '**Restauração terminada.**',
+        `Criados: **${criados}**${(r.canais || []).length ? ' — ' + r.canais.join(', ') : ''} • Já existiam: **${r.pulados}**`,
+        (r.ordem || []).length ? 'Ordem arrumada: ' + r.ordem.map((o) => `\`${o.paiNome}\` → ${o.canais.join(' > ')}`).join(' | ') : '',
+        (r.semPermissao || []).length ? 'Recriado sem permissões (cargo do backup não existe mais): ' + r.semPermissao.join(', ') : '',
+        (r.erros || []).length ? 'Erros:\n' + r.erros.slice(0, 10).map((x) => '• ' + x).join('\n') : '',
+        criados ? '' : 'Nada estava faltando: o servidor já tem tudo o que o backup conhece.',
+      ].filter(Boolean).join('\n')).catch(() => {});
+      await salvarSnapshot(m.guild, { forcado: true }).catch(() => {}); // agora tem MAIS canais: pode atualizar
+      log('RESTAURAR_CMD', { guild: m.guild.id, voz: soVoz, criados, erros: (r.erros || []).length });
+      return;
+    }
+    // ---------- .call limite <n>: quantas pessoas cabem na call (0 = sem limite) ----------
+    if (c === '.call' || c.startsWith('.call ')) {
+      await m.delete().catch(() => {});
+      const args = c.match(/^.call\s+limite\s*(.*)$/);
+      const texto = args ? String(args[1] || '').trim() : '';
+      // 'escada' = a regra do inferno: 1a call sem limite, o resto 2, 3, 4...
+      const parsed = ehEscada(texto) ? { plano: [], erros: [] } : parsearCallLimite(texto);
+      if (!args || !texto || (!ehEscada(texto) && parsed.erros.length)) {
+        await whSend(m.channel, [
+          parsed.erros.length ? '⚠️ ' + parsed.erros.join(' | ') : '',
+          '**`.call limite 99`** — bota o limite em todas as calls.',
+          '**`.call limite 99 gf caos`** — só nessas.',
+          '**`.call limite gf=2 caos=10 purgatorio=99`** — cada uma com o seu.',
+          '**`.call limite escada`** — 1ª sem limite, o resto 2, 3, 4... (`.call limite escada 5` começa em 5).',
+          '**`.call limite 0`** — volta pro sem limite.',
+        ].filter(Boolean).join('\n')).catch(() => {});
+        return;
+      }
+      const plano = ehEscada(texto)
+        ? planoEscada(m.guild, { inicio: (texto.match(/^escada\s+(\d{1,3})$/) || [])[1] || 2 })
+        : parsed.plano;
+      const r = await aplicarLimitesVoz(m.guild, plano, { log })
+        .catch((e) => { err(e); return { aplicados: [], pulados: [], erros: [String(e && e.message)] }; });
+      const fmt = (n) => (n === 0 ? 'sem limite' : n + ' pessoas');
+      const txt = (r.erros.length && !r.aplicados.length)
+        ? (r.erros[0] || 'não consegui mudar o limite.')
+        : [
+          `**Limite das calls:** ${r.aplicados.map((a) => `\`${a.nome}\` = ${fmt(a.limite)}`).join(', ') || 'nada mudou'}`,
+          r.aplicados.length ? 'Antes: ' + r.aplicados.map((a) => `${a.nome} (${fmt(a.antes)})`).join(', ') : '',
+          r.pulados.length ? 'Já estavam assim: ' + r.pulados.join(', ') : '',
+          r.erros.length ? 'Erros:\n' + r.erros.slice(0, 10).map((x) => '• ' + x).join('\n') : '',
+        ].filter(Boolean).join('\n');
+      await whSend(m.channel, txt).catch(() => {});
+      await salvarSnapshot(m.guild).catch(() => {}); // o limite entra no backup (e no .restaurar)
+      return;
+    }
+    // ---------- .snapshot agora: força o backup (o normal recusa quando encolhe) ----------
+    if (c === '.snapshot' || c === '.snapshot agora' || c === '.snapshot forcar') {
+      await m.delete().catch(() => {});
+      const res = await salvarSnapshot(m.guild, { forcado: true });
+      await whSend(m.channel, res === 'salvo'
+        ? '**backup atualizado** (forçado).'
+        : 'não consegui salvar o backup agora — olha o `errors.log` / log do runner.').catch(() => {});
+      return;
+    }
+    // ---------- .bloquear / .desbloquear / .bloqueios: palavras do dono ----------
+    // lista do dono, em runtime (sem redeploy). Apaga a mensagem e registra no
+    // canal de logs — sem mute e sem ban, igual ao filtro de denuncia.
+    if (c === '.bloquear' || c.startsWith('.bloquear ')) {
+      await m.delete().catch(() => {});
+      const termos = separarTermos(m.content.slice(m.content.toLowerCase().indexOf('.bloquear') + 9));
+      if (!termos.length) {
+        await whSend(m.channel, [
+          '**`.bloquear cu, bosta, vai se fuder`** — bloqueia palavras (vírgula, pipe ou quebra de linha separam).',
+          'Casa palavra inteira: `cu` pega "cuuu" e "c.u", mas não "inculo".',
+          '**`.desbloquear cu`** • **`.bloqueios`** (lista) • **`.bloqueios <frase>`** (testa).',
+        ].join('\n')).catch(() => {});
+        return;
+      }
+      const st = lerPalavrasBloqueadas();
+      const r = adicionarPalavras(st, termos, { por: m.author.id });
+      salvarPalavras(st);
+      const total = Object.keys(st.palavras).length;
+      await whSend(m.channel, [
+        r.adicionadas.length ? `**Bloqueadas:** ${r.adicionadas.map((t) => '`' + t + '`').join(', ')}` : '',
+        r.jaTinham.length ? 'Já estavam: ' + r.jaTinham.map((t) => '`' + t + '`').join(', ') : '',
+        r.invalidas.length ? 'Ignoradas (vazias ou gigantes): ' + r.invalidas.join(', ') : '',
+        r.semEspaco.length ? 'Não coube (limite de 300): ' + r.semEspaco.join(', ') : '',
+        `Total: **${total}** palavra(s) bloqueada(s).`,
+      ].filter(Boolean).join('\n')).catch(() => {});
+      log('PALAVRA_ADD', { por: m.author.id, termos: r.adicionadas, total });
+      return;
+    }
+    if (c === '.desbloquear' || c.startsWith('.desbloquear ')) {
+      await m.delete().catch(() => {});
+      const termos = separarTermos(m.content.slice(m.content.toLowerCase().indexOf('.desbloquear') + 12));
+      if (!termos.length) {
+        await whSend(m.channel, 'usa **`.desbloquear cu, bosta`** (ou **`.bloqueios`** pra ver a lista).').catch(() => {});
+        return;
+      }
+      const st = lerPalavrasBloqueadas();
+      const r = removerPalavras(st, termos);
+      salvarPalavras(st);
+      const total = Object.keys(st.palavras).length;
+      await whSend(m.channel, [
+        r.removidas.length ? `**Desbloqueadas:** ${r.removidas.map((t) => '`' + t + '`').join(', ')}` : 'nada removido.',
+        r.naoTinham.length ? 'Não estavam na lista: ' + r.naoTinham.map((t) => '`' + t + '`').join(', ') : '',
+        `Total: **${total}** palavra(s) bloqueada(s).`,
+      ].filter(Boolean).join('\n')).catch(() => {});
+      log('PALAVRA_DEL', { por: m.author.id, termos: r.removidas, total });
+      return;
+    }
+    if (c === '.bloqueios' || c.startsWith('.bloqueios ')) {
+      await m.delete().catch(() => {});
+      const resto = m.content.slice(m.content.toLowerCase().indexOf('.bloqueios') + 10).trim();
+      const st = lerPalavrasBloqueadas();
+      // .bloqueios <frase> testa se a frase cairia em alguma palavra
+      if (resto) {
+        const hit = casarPalavras(resto, st);
+        await whSend(m.channel, hit
+          ? `🚫 cai na palavra bloqueada \`${hit.termo}\`.`
+          : '✅ não cai em nenhuma palavra bloqueada.').catch(() => {});
+        return;
+      }
+      const lista = listarPalavras(st);
+      if (!lista.length) {
+        await whSend(m.channel, 'nenhuma palavra bloqueada ainda. **`.bloquear palavra`** pra começar.').catch(() => {});
+        return;
+      }
+      const linhas = lista.map((p, i) => `${i + 1}. \`${p.termo}\`${p.usos ? ` (${p.usos}x)` : ''}`);
+      const paginas = [];
+      let atual = '';
+      for (const l of linhas) { // respeita o limite de 2000 caracteres do Discord
+        if (atual.length + l.length + 1 > 1400) { paginas.push(atual); atual = ''; }
+        atual += (atual ? '\n' : '') + l;
+      }
+      if (atual) paginas.push(atual);
+      for (const [i, pg] of paginas.entries()) {
+        await whSend(m.channel, `**${lista.length} palavra(s) bloqueada(s)**${paginas.length > 1 ? ` (${i + 1}/${paginas.length})` : ''}:\n${pg}`).catch(() => {});
+      }
+      return;
+    }
     if (c === '.nuke' || c === '.nuke on' || c === '.nuke off') {
       if (c === '.nuke' || c === '.nuke on') {
         const stJa = readJsonSafe(NUKE_STATE, {});
@@ -1356,6 +1576,25 @@ client.on('messageCreate', async (m) => {
           `**Trecho:** ${corta(limparCodigo(m.content), 300)}`,
         ].join('\n')).catch(() => {});
         return; // nao cai no anti-flood: ja foi tratado (sem mute/timeout/ban por filtro)
+      }
+    }
+    // 0.5) palavras que o DONO bloqueou (.bloquear): apaga e registra no canal
+    //      de logs. Sem castigo (nem mute, nem ban) — igual ao filtro de denuncia.
+    if (m.content) {
+      const stPal = lerPalavrasBloqueadas();
+      const hit = casarPalavras(m.content, stPal);
+      if (hit) {
+        registrarUso(stPal, hit.chave);
+        salvarPalavras(stPal);
+        await m.delete().catch(() => {});
+        log('PALAVRA_BLOQUEADA', { guild: m.guild.id, canal: m.channelId, user: m.author.id, termo: hit.termo, usos: hit.entrada.usos });
+        logEvento('🚫 palavra bloqueada', [
+          `**Palavra:** \`${hit.termo}\``,
+          `**Conta:** <@${m.author.id}> (\`${m.author.id}\`)`,
+          `**Canal:** <#${m.channelId}>`,
+          `**Trecho:** ${corta(limparCodigo(m.content), 300)}`,
+        ], 0x992d22);
+        return;
       }
     }
     const cfg = readJsonSafe(ANTIFLOOD_CFG, ANTIFLOOD_DEFAULT);
@@ -1904,16 +2143,23 @@ async function limparServer(guild) {
     // canal sumiu (delete falhou antes, alguem apagou): recria do zero na categoria do bump
     log('NUKE_CONF_NAO_ACHADO', { guild: guild.id });
     const bump = chans.find((c) => c.type === 0 && /^bump$/i.test(c.name || ''));
+    const pai = (bump && bump.parentId) || undefined;
     conf = await guild.channels.create({
       name: '・confessionario',
       type: 0,
-      parent: (bump && bump.parentId) || undefined,
+      parent: pai,
+      // nasce logo abaixo do canal inferno (ver ordem abaixo)
+      position: posicaoDoConfessionario(irmaosOrdenados(chans, pai || null)),
       reason: 'nuke: confessionario recriado do zero',
     }).catch((e) => { nlog.erros.push('create do zero: ' + (e && e.message)); err(e); return null; });
     nlog.confCreate = conf ? conf.id : null;
     if (conf) {
       await garantirPermModeracao(guild, conf);
       await guild.setSystemChannel(conf).catch((e) => err(e));
+      // inferno primeiro, confessionario em segundo (mesma ordem do renascimento)
+      const ord = await garantirOrdemInferno(guild, conf, { log });
+      nlog.ordem = { canais: ord.ordem, mudou: ord.mudou, ok: ord.ok };
+      if (!ord.ok) nlog.erros.push('ordem: ' + ord.erro);
       await anunciarNuke(guild).catch(() => {}); nlog.anuncio = 'ok';
     }
   }
@@ -1926,6 +2172,14 @@ async function limparServer(guild) {
       const over = f.permissionOverwrites.cache.map((o) => ({
         id: o.id, type: o.type, allow: o.allow.bitfield, deny: o.deny.bitfield,
       }));
+      // BUG ANTIGO 2: copiar f.position fazia o confessionario nascer em cima do
+      // canal inferno. f.position e o INDICE dentro do pai (0, 1, 2...), nao a
+      // posicao bruta do Discord — e como o Discord nao renumera as posicoes
+      // quando um canal e apagado (sobram buracos), o indice 2 caia antes de
+      // todo mundo. Aqui o canal ja nasce no lugar certo (abaixo do inferno) e
+      // o garantirOrdemInferno reindexa os irmaos pra cravar a ordem.
+      const irmaos = irmaosOrdenados(chans, f.parentId);
+      const posNova = posicaoDoConfessionario(irmaos.filter((c) => c.id !== f.id), f.position);
       const spec = buildChannelSpec({
         name: f.name,
         type: f.type,
@@ -1933,7 +2187,7 @@ async function limparServer(guild) {
         topic: f.topic,
         nsfw: f.nsfw,
         rateLimitPerUser: f.rateLimitPerUser,
-        position: f.position,
+        position: posNova,
       }, over, { reason: 'nuke: renascimento do confessionario' });
       await f.delete('nuke: confessionario renasce').then(() => { nlog.confDelete = 'ok'; }).catch((e) => { nlog.confDelete = 'erro: ' + (e && e.message); err(e); });
       const novo = await guild.channels.create(spec).catch((e) => { nlog.erros.push('create: ' + (e && e.message)); err(e); return null; });
@@ -1942,6 +2196,10 @@ async function limparServer(guild) {
         log('NUKE_CONF_RECRIADO', { novo: novo.id, pos: novo.position, sistema: eraSistema, overwrites: over.length });
         await garantirPermModeracao(guild, novo); // self-heal se as perms antigas ja estavam perdidas
         await guild.setSystemChannel(novo).catch((e) => err(e)); // confessionario sempre selecionado
+        // ordem certa da categoria: inferno em primeiro, confessionario em segundo
+        const ord = await garantirOrdemInferno(guild, novo, { log });
+        nlog.ordem = { canais: ord.ordem, mudou: ord.mudou, ok: ord.ok };
+        if (!ord.ok) nlog.erros.push('ordem: ' + ord.erro);
         await anunciarNuke(guild); // mensagem entra no canal novo na hora
         nlog.anuncio = 'ok';
       }
