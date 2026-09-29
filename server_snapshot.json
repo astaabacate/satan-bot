@@ -1,5 +1,5 @@
 {
-  "salvoEm": "2026-09-29T02:48:01.937Z",
+  "salvoEm": "2026-09-29T02:48:02.836Z",
   "guild": {
     "id": "1554284137261830184",
     "name": "inferno",
@@ -136,24 +136,6 @@
       ]
     },
     {
-      "id": "1554323828593918023",
-      "name": "logs",
-      "type": 0,
-      "parentId": null,
-      "position": 3,
-      "topic": "canal de logs do bot (webhook Satan Logs 1551879675306049596)",
-      "nsfw": false,
-      "rateLimitPerUser": 0,
-      "overwrites": [
-        {
-          "id": "1554284378803281931",
-          "type": 0,
-          "allow": "536996864",
-          "deny": "0"
-        }
-      ]
-    },
-    {
       "id": "1554323721060352132",
       "name": "ritual",
       "type": 2,
@@ -172,24 +154,6 @@
       ],
       "bitrate": 64000,
       "userLimit": 0
-    },
-    {
-      "id": "1554323829407358986",
-      "name": "painel",
-      "type": 0,
-      "parentId": null,
-      "position": 4,
-      "topic": "canal do painel do nuke (.nuke / .menu)",
-      "nsfw": false,
-      "rateLimitPerUser": 0,
-      "overwrites": [
-        {
-          "id": "1554284378803281931",
-          "type": 0,
-          "allow": "536996864",
-          "deny": "0"
-        }
-      ]
     },
     {
       "id": "1554323721874047147",
