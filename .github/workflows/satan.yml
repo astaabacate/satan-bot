@@ -1,13 +1,8 @@
 name: satan
 on:
   workflow_dispatch:
-    inputs:
-      apply:
-        description: 'Manutenção temporária: aplicar exclusão e movimentação (somente na branch de manutenção)'
-        type: boolean
-        default: false
   push:
-    branches: [main, arena/01a0eb12-satan-bot] # branch de manutencao roda apenas o job temporario; bot so no main
+    branches: [main] # so o main sobe bot: branch de trabalho nao pode ligar um segundo bot
     paths-ignore:
       - 'nuke_state.json'
       - 'bump_state.json'
@@ -27,22 +22,6 @@ permissions:
   contents: write
   actions: write # o bot novo cancela o run antigo (troca de guarda) e dispara run novo antes do teto de 6h
 jobs:
-  maintenance:
-    if: github.ref == 'refs/heads/arena/01a0eb12-satan-bot' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: inspecionar ou aplicar manutencao pontual
-        env:
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-          MAINTENANCE_APPLY: 'true' # execução pontual autorizada; retirar o job após verificar
-        run: node scripts/maintenance-inferno.js
   bot:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
