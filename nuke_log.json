@@ -1,15 +1,19 @@
 {
-  "quando": "2026-09-28T23:45:31.714Z",
+  "quando": "2026-09-29T00:46:30.799Z",
   "confAchado": null,
-  "confDelete": "ok",
-  "confCreate": "1554277924788502538",
-  "anuncio": "ok",
+  "confDelete": null,
+  "confCreate": null,
+  "anuncio": null,
   "calls": [
     {
-      "canal": "Voz Fortnite",
+      "canal": "General",
       "apagadas": 0
     }
   ],
-  "erros": [],
+  "erros": [
+    "fetch canais: Expected token to be set for this request, but none was present",
+    "create do zero: Expected token to be set for this request, but none was present",
+    "call General: Expected token to be set for this request, but none was present"
+  ],
   "totalMsgs": 0
 }
