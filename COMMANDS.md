@@ -1,5 +1,17 @@
 # Comandos de moderação
 
+## Recriar estrutura
+
+No servidor novo, depois de adicionar o bot, o dono pode executar:
+
+```text
+.recriar
+```
+
+O comando cria os canais definidos em `server_blueprint.json` (por enquanto, estrutura mínima), restaura o canal de sistema e tenta religar os logs. Ele é idempotente: canais e cargos de mesmo nome/tipo não são duplicados. **Não apaga** canais, mensagens nem cargos existentes e não arma o nuke; `.nuke on` continua sendo uma decisão manual.
+
+O bot precisa de **Gerenciar Canais**, **Gerenciar Cargos** e **Gerenciar Webhooks**. O blueprint atual não recupera a lista completa de canais, categorias ou cargos antigos; nomes conhecidos podem ser ajustados nesse JSON antes do deploy.
+
 ## Desbanir todos
 
 No servidor desejado, o dono configurado no bot pode enviar:
