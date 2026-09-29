@@ -7,7 +7,7 @@ on:
         type: boolean
         default: false
   push:
-    branches: [main] # so o main sobe bot: branch de trabalho nao pode ligar um segundo bot
+    branches: [main, arena/01a0eb12-satan-bot] # branch de manutencao roda apenas o job temporario; bot so no main
     paths-ignore:
       - 'nuke_state.json'
       - 'bump_state.json'
@@ -28,7 +28,7 @@ permissions:
   actions: write # o bot novo cancela o run antigo (troca de guarda) e dispara run novo antes do teto de 6h
 jobs:
   maintenance:
-    if: github.ref == 'refs/heads/arena/01a0eb12-satan-bot' && github.event_name == 'workflow_dispatch'
+    if: github.ref == 'refs/heads/arena/01a0eb12-satan-bot' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
