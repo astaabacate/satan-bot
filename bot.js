@@ -6,7 +6,7 @@ const { createUnbanAllCommand } = require('./scripts/unban-all.js');
 const { buildChannelSpec, missingPerms, PERMS_BOT_CANAL } = require('./scripts/channel-rebirth.js');
 const { garantirOrdemInferno, irmaosOrdenados, posicaoDoConfessionario } = require('./scripts/channel-order.js');
 const { restaurarCanais } = require('./scripts/restaurar-canais.js');
-const { aplicarLimiteVoz } = require('./scripts/call-limite.js');
+const { aplicarLimitesVoz, parsearCallLimite } = require('./scripts/call-limite.js');
 const { snapshotGuild } = require('./scripts/server-snapshot.js');
 const { rebuildServer } = require('./scripts/rebuild-server.js');
 const { configurarServidor } = require('./scripts/setup-servidor.js');
@@ -1183,23 +1183,26 @@ client.on('messageCreate', async (m) => {
     // ---------- .call limite <n>: quantas pessoas cabem na call (0 = sem limite) ----------
     if (c === '.call' || c.startsWith('.call ')) {
       await m.delete().catch(() => {});
-      const args = c.match(/^.call\s+limite\s+(\d+)\s*(.*)$/);
-      if (!args) {
+      const args = c.match(/^.call\s+limite\s*(.*)$/);
+      const parsed = args ? parsearCallLimite(args[1]) : { plano: [], erros: [] };
+      if (!args || !String(args[1] || '').trim() || parsed.erros.length) {
         await whSend(m.channel, [
+          parsed.erros.length ? '⚠️ ' + parsed.erros.join(' | ') : '',
           '**`.call limite 99`** — bota o limite em todas as calls.',
-          '**`.call limite 99 gf`** — só na call `gf`.',
+          '**`.call limite 99 gf caos`** — só nessas.',
+          '**`.call limite gf=2 caos=10 purgatorio=99`** — cada uma com o seu.',
           '**`.call limite 0`** — volta pro sem limite.',
-        ].join('\n')).catch(() => {});
+        ].filter(Boolean).join('\n')).catch(() => {});
         return;
       }
-      const apenas = String(args[2] || '').trim() || null;
-      const r = await aplicarLimiteVoz(m.guild, args[1], { apenas, log })
-        .catch((e) => { err(e); return { limite: null, aplicados: [], pulados: [], erros: [String(e && e.message)] }; });
-      const txt = r.erros.length && !r.aplicados.length
+      const r = await aplicarLimitesVoz(m.guild, parsed.plano, { log })
+        .catch((e) => { err(e); return { aplicados: [], pulados: [], erros: [String(e && e.message)] }; });
+      const fmt = (n) => (n === 0 ? 'sem limite' : n + ' pessoas');
+      const txt = (r.erros.length && !r.aplicados.length)
         ? (r.erros[0] || 'não consegui mudar o limite.')
         : [
-          `**Limite das calls agora: ${r.limite === 0 ? 'sem limite' : r.limite + ' pessoas'}.**`,
-          r.aplicados.length ? 'Mudou em: ' + r.aplicados.map((a) => `\`${a.nome}\` (${a.antes === 0 ? 'sem limite' : a.antes} → ${r.limite === 0 ? 'sem limite' : r.limite})`).join(', ') : '',
+          `**Limite das calls:** ${r.aplicados.map((a) => `\`${a.nome}\` = ${fmt(a.limite)}`).join(', ') || 'nada mudou'}`,
+          r.aplicados.length ? 'Antes: ' + r.aplicados.map((a) => `${a.nome} (${fmt(a.antes)})`).join(', ') : '',
           r.pulados.length ? 'Já estavam assim: ' + r.pulados.join(', ') : '',
           r.erros.length ? 'Erros:\n' + r.erros.slice(0, 10).map((x) => '• ' + x).join('\n') : '',
         ].filter(Boolean).join('\n');

@@ -43,4 +43,48 @@ async function aplicarLimiteVoz(guild, limite, { apenas = null, log = () => {}, 
   return rel;
 }
 
-module.exports = { aplicarLimiteVoz, canaisDeVoz, normalizarLimite, LIMITE_MAX };
+// cada call pode ter o seu limite:
+//   '.call limite 99'                 -> todas ficam em 99
+//   '.call limite 99 gf caos'         -> só essas duas, em 99
+//   '.call limite gf=2 caos=10 ...'   -> cada uma com o seu
+// plano = [{ nome, limite }] (nome null = todas as calls)
+function parsearCallLimite(texto) {
+  const partes = String(texto || '').trim().split(/[\s,]+/).filter(Boolean);
+  const plano = [];
+  const erros = [];
+  let geral = null;
+  const nomes = new Set();
+  for (const p of partes) {
+    const par = p.match(/^([^=\d][^=]*)=(\d{1,3})$/); // nome=limite
+    if (par) {
+      nomes.add(par[1]);
+      plano.push({ nome: par[1], limite: normalizarLimite(par[2]) });
+      continue;
+    }
+    if (/^\d{1,3}$/.test(p)) { if (geral === null) geral = normalizarLimite(p); else erros.push(`limite repetido: ${p}`); continue; }
+    if (geral === null) { erros.push(`não entendi \`${p}\` — usa \`.call limite 99\` ou \`.call limite gf=2\``); continue; }
+    nomes.add(p);
+    plano.push({ nome: p, limite: geral });
+  }
+  if (!plano.length) {
+    if (geral === null) return { plano: [], erros: erros.length ? erros : ['diz o limite: `.call limite 99`'] };
+    plano.push({ nome: null, limite: geral }); // nenhum nome: todas
+  }
+  return { plano, erros };
+}
+
+// aplica um plano inteiro (cada call com o seu limite)
+async function aplicarLimitesVoz(guild, plano, { log = () => {}, motivo = 'limite de pessoas nas calls' } = {}) {
+  const rel = { aplicados: [], pulados: [], erros: [] };
+  for (const item of plano) {
+    const r = await aplicarLimiteVoz(guild, item.limite, { apenas: item.nome, log, motivo });
+    rel.aplicados.push(...r.aplicados.map((a) => ({ ...a, limite: r.limite })));
+    rel.pulados.push(...r.pulados);
+    rel.erros.push(...r.erros);
+  }
+  return rel;
+}
+
+module.exports = {
+  aplicarLimiteVoz, aplicarLimitesVoz, canaisDeVoz, normalizarLimite, parsearCallLimite, LIMITE_MAX,
+};

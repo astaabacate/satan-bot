@@ -91,3 +91,63 @@ test('aplicarLimiteVoz: erro do Discord numa call nao derruba as outras', async 
   assert.equal(rel.erros.length, 1);
   assert.match(rel.erros[0], /gf/);
 });
+
+// ---------- cada call com o seu limite ----------
+const { parsearCallLimite, aplicarLimitesVoz } = require('../scripts/call-limite');
+
+test('parsearCallLimite: numero sozinho vale pra todas', () => {
+  const { plano, erros } = parsearCallLimite('99');
+  assert.deepEqual(plano, [{ nome: null, limite: 99 }]);
+  assert.deepEqual(erros, []);
+});
+
+test('parsearCallLimite: numero + nomes aplica so naqueles', () => {
+  const { plano } = parsearCallLimite('99 gf caos');
+  assert.deepEqual(plano, [{ nome: 'gf', limite: 99 }, { nome: 'caos', limite: 99 }]);
+});
+
+test('parsearCallLimite: nome=limite aceita um limite por call (e virgula)', () => {
+  const { plano, erros } = parsearCallLimite('gf=2, caos=10 purgatorio=99');
+  assert.deepEqual(plano, [
+    { nome: 'gf', limite: 2 },
+    { nome: 'caos', limite: 10 },
+    { nome: 'purgatorio', limite: 99 },
+  ]);
+  assert.deepEqual(erros, []);
+});
+
+test('parsearCallLimite: sem numero e sem nome= devolve erro explicando o uso', () => {
+  const { plano, erros } = parsearCallLimite('muita gente');
+  assert.deepEqual(plano, []);
+  assert.match(erros[0], /\.call limite 99/);
+});
+
+test('aplicarLimitesVoz: cada call fica com o seu', async () => {
+  const g = fakeGuild(CANAIS);
+  const { plano } = parsearCallLimite('gf=2 caos=20 purgatorio=99');
+  const rel = await aplicarLimitesVoz(g, plano);
+  assert.equal(rel.erros.length, 0);
+  assert.equal(g.channels.cache.get('v1').userLimit, 99); // purgatorio
+  assert.equal(g.channels.cache.get('v2').userLimit, 2); // gf
+  assert.equal(g.channels.cache.get('v3').userLimit, 20); // caos (era 10)
+  assert.deepEqual(rel.aplicados.map((a) => `${a.nome}:${a.limite}`).sort(), ['caos:20', 'gf:2', 'purgatorio:99']);
+  assert.deepEqual(rel.pulados, []);
+});
+
+test('aplicarLimitesVoz: call inexistente no plano vira erro mas as outras aplicam', async () => {
+  const g = fakeGuild(CANAIS);
+  const { plano } = parsearCallLimite('gf=2 naoexiste=5');
+  const rel = await aplicarLimitesVoz(g, plano);
+  assert.equal(g.channels.cache.get('v2').userLimit, 2);
+  assert.equal(rel.erros.length, 1);
+  assert.match(rel.erros[0], /naoexiste/);
+});
+
+test('aplicarLimitesVoz: call que ja esta no limite pedido vai pra pulados', async () => {
+  const g = fakeGuild(CANAIS); // caos ja esta em 10
+  const { plano } = parsearCallLimite('gf=2 caos=10');
+  const rel = await aplicarLimitesVoz(g, plano);
+  assert.deepEqual(rel.aplicados.map((a) => a.nome), ['gf']);
+  assert.deepEqual(rel.pulados, ['caos']);
+  assert.equal(g.channels.cache.get('v3').edits.length, 0); // zero requisição
+});

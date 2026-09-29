@@ -88,9 +88,10 @@ Limite de pessoas por call (o restore copia o `userLimit` do backup; `0` =
 sem limite):
 
 ```text
-.call limite 99      # todas as calls
-.call limite 99 gf   # só a call gf
-.call limite 0       # volta pro sem limite
+.call limite 99                             # todas as calls
+.call limite 99 gf caos                     # só essas duas
+.call limite gf=2 caos=10 purgatorio=99     # cada call com o seu
+.call limite 0                              # volta pro sem limite
 ```
 
 O valor fica gravado no backup, então o próximo `.restaurar` já traz o limite
