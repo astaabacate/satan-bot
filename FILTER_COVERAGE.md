@@ -11,6 +11,7 @@ Apagar na hora conteúdo que faz o Discord derrubar o servidor inteiro e banir o
 | cat | grave | cor | o que derruba |
 |---|---|---|---|
 | `menor-sexual` | sim | `0x8b0000` | exploração sexual infantil (tolerância zero). É o que a polícia recebe. |
+| `violencia-sexual` | sim | `0x8b0000` | estupro/abuso sexual (termos sem “abuso” puro; sem zoeira) |
 | `automutilacao` | sim | `0x8b0000` | incentivo/convite a se machucar ou se matar |
 | `ameaca` | sim | `0xb22222` | ameaça de violência a pessoa concreta |
 | `extorsao` | sim | `0x8b1a1a` | sextorsão / chantagem (ex.: “manda pix que eu mostro”, “vou postar seu nude”) |
@@ -48,7 +49,19 @@ underage, loli, lolicon, shotacon, shota
 + regex: \bmenor(?:es)?\s+de\s+\d{1,2}\s+anos?\b.{0,40}\b(nu|nua|nude|porn|sexo|sexual)\b
 ```
 
-`CP` é bloqueado **independentemente do contexto**, inclusive “CP do pokemon”, “CP brincadeira”. Para essa categoria não há exceção por conter “brincadeira”, “zoeira”, “de rir”, “demais” etc. — a exceção `ZOEIRO` só se aplica às demais categorias (evita apagar “vou morrer de rir”, “me mato de rir kkk”).
+`CP` é bloqueado **independentemente do contexto**, inclusive “CP do pokemon”, “CP brincadeira”. Para essa categoria não há exceção por conter “brincadeira”, “zoeira”, “de rir”, “demais” etc. — a exceção `ZOEIRO` só se aplica às demais categorias (evita apagar “vou morrer de rir”, “me mato de rir kkk”). A `violencia-sexual` também não tem exceção de zoeira.
+
+**Categoria `violencia-sexual` (pt/en):**
+
+```
+estupro, estuprar, estuprada, estuprado, estuprador, estupradora, estupradores,
+estuprou, estuprando, estupra, estuprava,
+abusador, abusadora, abusadores, abuso sexual,
+rape, rapist, sexual assault
+```
+
+Sem “abuso” puro para não pegar “abuso de poder”. Categoria `grave` com a mesma
+ação das demais (apagar e avisar o dono, sem mute/timeout/ban).
 
 **Exemplos que caem:**
 
@@ -61,7 +74,7 @@ underage, loli, lolicon, shotacon, shota
 
 ## Ação do bot
 
-- **Apenas** tenta apagar a mensagem e avisa o dono (canal de logs + DM). **Não aplica mute/timeout/ban por filtro**, inclusive `CP`/`CSAM`/`CSEM`. A imunidade do dono (`OWNER_ID`) continua igual.
+- **Apenas** tenta apagar a mensagem e avisa o dono (canal de logs + DM). **Não aplica mute/timeout/ban por filtro**, inclusive `CP`/`CSAM`/`CSEM` e `violencia-sexual`. A imunidade do dono (`OWNER_ID`) continua igual.
 - Flood/spam continua com punições separadas (timeout progressivo de 1h +1h, `mute_state.json`), sem alteração aqui.
 - Categorias, permissões de canais e mensagem de boas-vindas não são alteradas por este filtro.
 
