@@ -1,5 +1,5 @@
 {
-  "salvoEm": "2026-09-30T03:44:58.591Z",
+  "salvoEm": "2026-09-30T04:10:56.081Z",
   "guild": {
     "id": "1554284137261830184",
     "name": "inferno",
@@ -18,8 +18,8 @@
     "premiumTier": 0,
     "premiumSubscriptionCount": 0,
     "features": [
-      "NEWS",
-      "COMMUNITY"
+      "COMMUNITY",
+      "NEWS"
     ]
   },
   "categorias": [
