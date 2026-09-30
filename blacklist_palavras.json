@@ -92,6 +92,49 @@
       "criadoEm": "2026-09-30T23:07:07.074Z",
       "usos": 1,
       "ultimoUso": "2026-09-30T23:07:07.285Z"
+    },
+    "preto": {
+      "termo": "preto",
+      "chave": "preto",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-09-30T23:28:00.273Z",
+      "usos": 1,
+      "ultimoUso": "2026-09-30T23:28:00.488Z"
+    },
+    "negro": {
+      "termo": "negro",
+      "chave": "negro",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-09-30T23:28:00.273Z",
+      "usos": 0
+    },
+    "macaco": {
+      "termo": "macaco",
+      "chave": "macaco",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-09-30T23:28:00.273Z",
+      "usos": 0
+    },
+    "preta": {
+      "termo": "preta",
+      "chave": "preta",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-09-30T23:28:00.273Z",
+      "usos": 0
+    },
+    "macaca": {
+      "termo": "macaca",
+      "chave": "macaca",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-09-30T23:28:00.273Z",
+      "usos": 0
+    },
+    "negra": {
+      "termo": "negra",
+      "chave": "negra",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-09-30T23:28:00.273Z",
+      "usos": 0
     }
   }
 }
