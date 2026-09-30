@@ -1,5 +1,5 @@
 {
-  "salvoEm": "2026-09-30T04:45:08.288Z",
+  "salvoEm": "2026-09-30T04:45:58.585Z",
   "guild": {
     "id": "1554284137261830184",
     "name": "inferno",
@@ -11,7 +11,7 @@
     "mfaLevel": 0,
     "explicitContentFilter": 2,
     "defaultMessageNotifications": 1,
-    "systemChannelId": "1554700435586162718",
+    "systemChannelId": "1554715787259027516",
     "rulesChannelId": "1554327593245745162",
     "publicUpdatesChannelId": "1554327593245745166",
     "preferredLocale": "en-US",
@@ -116,7 +116,7 @@
       ]
     },
     {
-      "id": "1554700435586162718",
+      "id": "1554715787259027516",
       "name": "confessionario",
       "type": 0,
       "parentId": "1554329873089175582",
