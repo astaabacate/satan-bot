@@ -77,6 +77,13 @@
       "criadoEm": "2026-09-30T12:58:32.098Z",
       "usos": 1,
       "ultimoUso": "2026-09-30T12:58:32.293Z"
+    },
+    "estuprou": {
+      "termo": "estuprou",
+      "chave": "estuprou",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-09-30T12:59:20.228Z",
+      "usos": 0
     }
   }
 }
