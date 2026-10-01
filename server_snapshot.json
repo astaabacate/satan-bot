@@ -1,5 +1,5 @@
 {
-  "salvoEm": "2026-09-30T07:48:40.794Z",
+  "salvoEm": "2026-10-01T03:56:07.284Z",
   "guild": {
     "id": "1554284137261830184",
     "name": "inferno",
@@ -11,7 +11,7 @@
     "mfaLevel": 0,
     "explicitContentFilter": 2,
     "defaultMessageNotifications": 1,
-    "systemChannelId": "1554761766318121013",
+    "systemChannelId": "1555058738321293363",
     "rulesChannelId": "1554327593245745162",
     "publicUpdatesChannelId": "1554327593245745166",
     "preferredLocale": "en-US",
@@ -47,6 +47,32 @@
     }
   ],
   "canais": [
+    {
+      "id": "1555065626836607067",
+      "name": "asta",
+      "type": 2,
+      "parentId": null,
+      "position": 0,
+      "topic": null,
+      "nsfw": false,
+      "rateLimitPerUser": 0,
+      "overwrites": [
+        {
+          "id": "1554284137261830184",
+          "type": 0,
+          "allow": "0",
+          "deny": "1049600"
+        },
+        {
+          "id": "1554526149877432402",
+          "type": 1,
+          "allow": "1049600",
+          "deny": "0"
+        }
+      ],
+      "bitrate": 64000,
+      "userLimit": 0
+    },
     {
       "id": "1554329873961590788",
       "name": "inferno",
@@ -116,7 +142,7 @@
       ]
     },
     {
-      "id": "1554761766318121013",
+      "id": "1555058738321293363",
       "name": "confessionario",
       "type": 0,
       "parentId": "1554329873089175582",
@@ -270,36 +296,6 @@
       ],
       "bitrate": 64000,
       "userLimit": 3
-    },
-    {
-      "id": "1554323717796921364",
-      "name": "logs",
-      "type": 0,
-      "parentId": "1554329873089175582",
-      "position": 3,
-      "topic": "canal de logs do bot (webhook Satan Logs 1551879675306049596)",
-      "nsfw": false,
-      "rateLimitPerUser": 0,
-      "overwrites": [
-        {
-          "id": "1554284137261830184",
-          "type": 0,
-          "allow": "0",
-          "deny": "1024"
-        },
-        {
-          "id": "1554284378803281931",
-          "type": 0,
-          "allow": "536996864",
-          "deny": "0"
-        },
-        {
-          "id": "1539465305326227477",
-          "type": 1,
-          "allow": "536996864",
-          "deny": "0"
-        }
-      ]
     },
     {
       "id": "1554323721060352132",
@@ -494,6 +490,12 @@
   "stickers": [
     {
       "id": "1554636777585901741",
+      "name": "discord.gg/inferninho",
+      "description": null,
+      "tags": "discord.gg/inferninho"
+    },
+    {
+      "id": "1554848887838212177",
       "name": "discord.gg/inferninho",
       "description": null,
       "tags": "discord.gg/inferninho"
