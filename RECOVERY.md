@@ -1,5 +1,62 @@
 # Recuperação do bot
 
+## Incidente de 01/10/2026 (watchdog cego + execução fantasma — horas sem bot)
+
+O bot parou de responder e nada apareceu vermelho no Actions. Duas falhas
+separadas se somaram:
+
+**1. O watchdog não reconhecia mais um bot vivo (causa de fundo, desde 29/09).**
+O commit `7b870fa` (PR #25, "limpeza") removeu o `.att` e renomeou a etapa do
+workflow de `bot (loop infinito; .att reinicia com o codigo novo)` para
+`bot (loop infinito)`. `scripts/check-bot.js` continuou procurando o nome antigo
+numa string fixa. Como a etapa nunca era encontrada, a prova de vida caía na
+tolerância de 15 minutos: **toda** verificação concluía "nenhuma execução
+utilizável" e despachava um substituto. O padrão ficou registrado nos runs — os
+últimos cinco disparos do watchdog foram seguidos, 10 a 15 segundos depois, por
+um `satan` `workflow_dispatch` (ator `github-actions[bot]`), e praticamente todos
+os runs terminaram `cancelled`: era a troca de guarda derrubando o bot que estava
+no ar. Os testes não pegaram porque `test/recovery.test.js` montava o job falso
+com o `BOT_STEP` importado do próprio módulo — autoconsistente, nunca comparado
+com o workflow de verdade.
+
+**2. Run fantasma + cron atrasado (a queda em si).** O run `36792298498`
+(schedule, criado em 30/09 23:40:31Z, commit `2cb1f2a`) rodou o bot por 2h18m —
+há commits de estado no `main` até 01:58:44Z — e teve a etapa `bot (loop
+infinito)` **cancelada em 01/10 01:58:54Z**. O GitHub não fechou o job:
+`completed_at` nulo, conclusão nula, etapas de limpeza executadas, run e job
+ainda `in_progress` na API. É a mesma forma do incidente de 26/09. Quem mandou
+cancelar não ficou provado (as anotações só existem depois que o job é fechado e
+o log não pôde ser baixado); não foi a troca de guarda do próprio bot, que só
+cancela runs de id **menor** e não havia run mais novo. A partir daí nada religou:
+o cron do watchdog (`7,17,27,37,47,57 * * * *`) não disparou nenhuma vez entre
+23:39:24Z e 02:25Z, e o cron do `satan` (`5 */5 * * *`) só voltaria por volta de
+05:05Z. Cron do GitHub atrasa horas em período de carga — já estava escrito no
+fim deste arquivo, e foi o que transformou uma queda em horas de silêncio.
+
+Correções:
+
+- `scripts/check-bot.js` **lê o nome da etapa do próprio
+  `.github/workflows/satan.yml`** (o último passo com `run:` do job `bot`) em vez
+  de usar string fixa. Renomear a etapa não cega mais o watchdog; se o arquivo
+  não puder ser lido, cai no padrão `bot (loop infinito)`.
+- Guarda anti-fantasma independente de nome: job `in_progress` com **todas** as
+  etapas já finalizadas = nada está rodando = não é bot vivo. (Job recém-iniciado,
+  sem etapas reportadas, continua com a tolerância de 15 minutos.)
+- Bot morto agora **falha visível**: o watchdog imprime `::error title=bot fora do
+  ar::…` com o que a API mostrou e termina com código 1, em vez de só escrever uma
+  linha no log e aparecer como `success`. O substituto continua sendo pedido antes.
+- `test/recovery.test.js` lê o workflow de verdade: confere que a etapa existe no
+  YAML, que um rename volta a ser acompanhado e que a execução fantasma (forma
+  exata do run `36792298498`) não passa por bot vivo.
+
+Procedimento quando o bot sumir e o Actions não mostrar nada:
+
+1. **Actions → satan → Run workflow → main** (é o que o watchdog faria).
+2. Se aparecer um run `in_progress` com todas as etapas fechadas, ele é fantasma:
+   pode cancelar na mão ou deixar — o bot novo cancela runs antigos depois do
+   `READY` (`TROCA_DE_GUARDA` no log).
+3. Conferir `[READY]` no log do run novo e testar um comando no Discord.
+
 ## Incidente de 29/09/2026 (token do secret inválido — bot mudo)
 
 Entre ~23:45 UTC de 28/09 e 01:47 UTC de 29/09 o nuke horário passou a falhar
@@ -130,7 +187,12 @@ confunde uma execução fantasma com um bot vivo.
 - `watchdog.yml` verifica a cada dez minutos, em outro runner, e também após
   conclusão com falha/timeout do workflow `satan`.
 - `scripts/check-bot.js` consulta jobs/etapas, não só status da execução.
-  Uma etapa do bot já finalizada não bloqueia a recuperação.
+  Uma etapa do bot já finalizada não bloqueia a recuperação. O nome da etapa é
+  lido do próprio `satan.yml` (renomear não cega o watchdog) e job `in_progress`
+  com todas as etapas finalizadas é tratado como execução fantasma.
+- Quando não existe bot vivo, o watchdog pede o substituto **e falha** (`::error`
+  + código 1): queda aparece vermelha no Actions e na notificação, em vez de
+  passar como `success` no log.
 - Inicialização/fila tem tolerância de 15 minutos. Pedidos de recuperação têm
   intervalo mínimo de cinco minutos. Erros de API falham visivelmente, em vez
   de serem interpretados como ausência de bot.

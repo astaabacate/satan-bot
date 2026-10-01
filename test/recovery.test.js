@@ -1,6 +1,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { checkBot, runIsUsable, tokenDiscordValido, BOT_STEP } = require('../scripts/check-bot');
+const fs = require('node:fs');
+const {
+  checkBot, runIsUsable, tokenDiscordValido, motivoIndisponivel,
+  passoDoBot, lerWorkflow, BOT_STEP, PASSO_BOT_PADRAO, WORKFLOW_SATAN,
+} = require('../scripts/check-bot');
 const { watchDiscord } = require('../scripts/discord-health');
 const now = Date.parse('2026-09-26T04:32:00Z');
 const run = (status = 'in_progress', minutes = 60) => ({
@@ -27,6 +31,54 @@ test('fila e instalacao recebem tolerancia, nao espera infinita', () => {
 test('job finalizado ou mais velho que teto nao e saudavel', () => {
   assert.equal(runIsUsable(run(), [{ ...job(), status: 'completed' }], now), false);
   assert.equal(runIsUsable(run(), [{ ...job(), started_at: run('in_progress', 361).created_at }], now), false);
+});
+
+// ---------- incidente de 01/10/2026: passo renomeado no workflow ----------
+// O commit 7b870fa tirou o ".att" e renomeou a etapa para "bot (loop infinito)",
+// mas check-bot.js continuou procurando o nome antigo. O watchdog passou a achar
+// que NENHUM bot estava vivo e despachava substituto em toda verificação — os
+// dois runs se cancelavam na troca de guarda. Estes testes leem o workflow de
+// verdade, então um rename volta a ser pego aqui.
+const yamlSatan = fs.readFileSync(WORKFLOW_SATAN, 'utf8');
+test('nome do passo do bot e lido do workflow, nao de string fixa', () => {
+  const passo = passoDoBot(yamlSatan);
+  assert.equal(passo, BOT_STEP);
+  assert.ok(yamlSatan.includes(`- name: ${passo}`), `o workflow nao tem mais a etapa "${passo}"`);
+  assert.equal(passoDoBot(''), PASSO_BOT_PADRAO); // sem YAML: cai no padrao conhecido
+});
+test('watchdog reconhece bot vivo mesmo se o passo for renomeado de novo', () => {
+  const renomeado = yamlSatan.replace('- name: bot (loop infinito)', '- name: bot (loop eterno; v2)');
+  assert.notEqual(renomeado, yamlSatan);
+  const passo = passoDoBot(renomeado);
+  assert.equal(passo, 'bot (loop eterno; v2)');
+  const vivo = { name: 'bot', status: 'in_progress', started_at: run().created_at, steps: [{ name: passo, status: 'in_progress', conclusion: null }] };
+  assert.equal(runIsUsable(run(), [vivo], now, passo), true);
+  // com o nome velho hardcoded, o mesmo job pareceria morto — era o bug
+  assert.equal(runIsUsable(run(), [vivo], now, 'bot (loop infinito; .att reinicia com o codigo novo)'), false);
+});
+test('execucao fantasma (todas as etapas fechadas, job in_progress) nao e bot vivo', async () => {
+  // forma exata do run 36792298498: cancelado às 01:58:54Z e nunca finalizado
+  const zumbi = {
+    name: 'bot', status: 'in_progress', started_at: run().created_at,
+    steps: [
+      { name: 'Set up job', status: 'completed', conclusion: 'success' },
+      { name: BOT_STEP, status: 'completed', conclusion: 'cancelled' },
+      { name: 'Complete job', status: 'completed', conclusion: 'success' },
+    ],
+  };
+  assert.equal(runIsUsable(run(), [zumbi], now), false);
+  assert.match(motivoIndisponivel(run(), [zumbi]), /execucao fantasma/);
+  const { api, calls } = fakeApi([run()], [zumbi]);
+  assert.match(await checkBot(api, now), /^nenhuma execucao utilizavel/);
+  assert.equal(calls.filter(c => c.method === 'POST').length, 1);
+});
+test('job recem-iniciado, sem etapas reportadas, ainda recebe tolerancia', () => {
+  // nao confundir "nenhuma etapa" (comecou agora) com "todas fechadas" (fantasma)
+  assert.equal(runIsUsable(run('in_progress', 2), [{ name: 'bot', status: 'in_progress', started_at: run().created_at, steps: [] }], now), true);
+  assert.equal(runIsUsable(run('in_progress', 2), [{ name: 'bot', status: 'in_progress', started_at: run().created_at, steps: [{ name: 'Set up job', status: 'in_progress' }] }], now), true);
+});
+test('lerWorkflow devolve texto vazio se o arquivo nao existe', () => {
+  assert.equal(lerWorkflow('/caminho/que/nao/existe.yml'), '');
 });
 function fakeApi(runs, jobs) {
   const calls = [];
