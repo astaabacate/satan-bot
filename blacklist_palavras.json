@@ -122,7 +122,8 @@
       "chave": "preta",
       "por": "1521612392105250836",
       "criadoEm": "2026-09-30T23:28:00.273Z",
-      "usos": 0
+      "usos": 1,
+      "ultimoUso": "2026-10-01T04:13:08.036Z"
     },
     "macaca": {
       "termo": "macaca",
