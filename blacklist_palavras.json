@@ -153,6 +153,14 @@
       "criadoEm": "2026-10-01T03:06:41.197Z",
       "usos": 1,
       "ultimoUso": "2026-10-01T03:06:41.350Z"
+    },
+    "molestado": {
+      "termo": "molestado",
+      "chave": "molestado",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-10-01T03:08:21.755Z",
+      "usos": 1,
+      "ultimoUso": "2026-10-01T03:08:21.933Z"
     }
   }
 }
