@@ -1407,42 +1407,11 @@ client.on('messageCreate', async (m) => {
     if (!m.guild) return;
     if (m.author.id === OWNER_ID) return; // o dono e imune: nada e apagado nele
 
-    // 0) PRIORIDADE MAXIMA: conteudo que faz o DISCORD derrubar o servidor
-    //    (filtro de denuncia). Apaga na hora, antes que alguem tire print e
-    //    denuncie; loga e avisa o dono sempre. Sem mute/timeout/ban por filtro.
-    if (m.content) {
-      const den = classificarDenuncia(m.content);
-      if (den) {
-        let apagouDen = await m.delete().then(() => true).catch(() => false);
-        if (!apagouDen) {
-          const curouDen = await garantirPermModeracao(m.guild, m.channel).catch(() => false);
-          if (curouDen) apagouDen = await m.delete().then(() => true).catch(() => false);
-          if (!apagouDen) avisarFalhaDelete(m, `denuncia:${den.cat}`, 'delete falhou').catch(err);
-        }
-        log('DENUNCIA_APAGADA', { guild: m.guild.id, canal: m.channelId, user: m.author.id, cat: den.cat, termo: den.termo, apagou: apagouDen });
-        registrarAcaoAntiflood({ canal: m.channelId, guild: m.guild.id, autor: m.author.id, motivo: `denuncia:${den.cat}`, apagou: apagouDen, apagadas: apagouDen ? 1 : 0, tipo: 'denuncia' });
-        logEvento(den.grave ? '🚨 conteúdo GRAVE apagado' : '⚠️ conteúdo denunciável apagado', [
-          `**Categoria:** \`${den.cat}\``,
-          `**Conta:** <@${m.author.id}> (\`${m.author.id}\`)`,
-          `**Canal:** <#${m.channelId}>`,
-          `**Mensagem:** \`${m.id}\``,
-          `**Trecho:** ${corta(limparCodigo(m.content), 900)}`,
-          den.grave ? '-# isso derruba servidor e ban o dono. O ban é por sua conta.' : '',
-          apagouDen ? '' : '⚠️ **não consegui apagar** (confira minhas permissões neste canal).',
-        ].filter(Boolean), den.cor);
-        avisarDono([
-          den.grave ? '🚨 **alerta grave** — isso derruba servidor:' : '⚠️ apaguei uma mensagem denunciável:',
-          `**Categoria:** \`${den.cat}\``,
-          `**Quem:** <@${m.author.id}> (\`${m.author.id}\`)`,
-          `**Trecho:** ${corta(limparCodigo(m.content), 300)}`,
-        ].join('\n')).catch(() => {});
-        return; // nao cai no anti-flood: ja foi tratado (sem mute/timeout/ban por filtro)
-      }
-    }
-
-    // 0.5) a lista DO DONO (.bloquear): a formação casa o começo da palavra e as
-    //      evasões (estu -> estupro/stupro/st). Sem castigo: apaga e registra
-    //      (o dono vê no .antiflood e nos logs).
+    // 0) ÚNICO filtro de conteúdo: a lista DO DONO (.bloquear). O filtro de
+    //    denúncia sai do ao vivo a pedido dele (02/10): quem cuida das palavras
+    //    agora é a lista dele, que casa por formação. Sem castigo: apaga e
+    //    registra (o dono vê no .antiflood e nos logs). A classificação de
+    //    denúncia continua só na faxina do histórico (ver motivosLegado).
     if (m.content) {
       const stPal = lerPalavrasBloqueadas();
       const hit = casarPalavras(m.content, stPal);

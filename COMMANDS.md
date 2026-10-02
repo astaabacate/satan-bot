@@ -82,13 +82,13 @@ Quando o bot liga, ele varre o histórico dos canais e apaga **o que já estava 
 
 ## Filtros de conteúdo (ao vivo)
 
-- **Denúncia** (`scripts/filtro-denuncia.js`) — prioridade máxima: apaga na hora
-  conteúdo que derruba servidor e ban o dono (menor-sexual, violencia-sexual,
-  automutilacao, ameaca, extorsao, dox, gore) e avisa o dono sempre. Sem
-  mute/timeout/ban por filtro.
-- **Lista do dono** (`.bloquear`) — casamento por formação.
+- **Lista do dono** (`.bloquear`) — casamento por formação. É quem cuida das
+  palavras: pra pegar conteúdo de criança etc., basta ter os termos na lista.
 - **Formato/mídia** — textão (>300), link/convite, link de CDN, repetição interna
   na mensagem, asterisco, mensagem começando com `#` e mensagem invisível.
+- O filtro automático de denúncia **não roda mais ao vivo** (o dono removeu em
+  02/10: "quem cuida das palavras é o `.bloquear`"). Ele continua no repo e é
+  usado só na **faxina do histórico**, pra apagar o que já estava salvo.
 - Nenhum deles pune: filtro só apaga. O **anti-flood** (comportamento: repetir,
   floodar, encher de emoji/msg curta) também só apaga — sem castigo.
 
