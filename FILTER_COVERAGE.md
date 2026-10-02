@@ -1,5 +1,16 @@
 # FILTER_COVERAGE — cobertura e limitações do filtro de conteúdo
 
+> **Fora do ao vivo** (02/10/2026): o `classificarDenuncia` **não** roda mais no
+> `messageCreate` — o dono vai usar a lista dele (`.bloquear`, casamento por
+> formação) para as palavras. O módulo continua no repo por dois motivos: a lista
+> usa o `normalizar` dele e ele alimenta a **faxina do histórico** (no boot), que
+> apaga o que já estava salvo e casa com a lista do dono **ou** com esta
+> classificação/regras de formato.
+>
+> Ao vivo seguem: lista do `.bloquear` + formato/mídia (textão >300,
+> link/convite, link de CDN, repetição interna, asterisco, `#`, invisível) —
+> todos só apagando, sem timeout.
+
 Este documento descreve o que o filtro textual do bot cobre e o que ele **não** cobre. O filtro é apenas textual, não analisa imagem/vídeo/áudio.
 
 ## Objetivo

@@ -6,9 +6,12 @@ const { buildChannelSpec, missingPerms, PERMS_BOT_CANAL } = require('./scripts/c
 const { garantirOrdemInferno, irmaosOrdenados, posicaoDoConfessionario } = require('./scripts/channel-order.js');
 const { adicionarPalavras, removerPalavras, listarPalavras, casarPalavras, registrarUso, separarTermos } = require('./scripts/blacklist-palavras.js');
 const { snapshotGuild } = require('./scripts/server-snapshot.js');
-const { classificarDenuncia } = require('./scripts/filtro-denuncia.js');
 const { watchDiscord } = require('./scripts/discord-health.js');
 const { corridaComTimeout, ehErroDeAutenticacao, TIMEOUT_CODE, CODIGO_LOGIN_TRAVADO, CODIGO_TOKEN_INVALIDO } = require('./scripts/login-guard.js');
+const { registrarRepeticao, decidirRepeticao, podarLedger } = require('./scripts/antiflood-regras.js');
+// as regras antigas de conteudo sairam do filtro AO VIVO (pedido do dono em
+// 02/10: so a lista dele filtra), mas continuam aqui para a faxina do historico
+const { classificarDenuncia } = require('./scripts/filtro-denuncia.js');
 
 // token vem do .env ao lado — nao precisa de variavel de ambiente nem de chave na mao
 if (!process.env.DISCORD_TOKEN) {
@@ -28,9 +31,26 @@ const ERRORS = path.join(ROOT, 'errors.log');
 
 // anti-flood (ajustavel via antispam_config.json)
 const ANTIFLOOD_CFG = path.join(ROOT, 'antispam_config.json');
+// memoria do anti-flood (contadores por autor + historico do que o bot fez):
+// vive no repo igual mute_state.json, entao reiniciar o bot NAO zera a conta de
+// quem estava floodando — era assim que um flood lento passava entre religadas.
+const ANTIFLOOD_STATE = path.join(ROOT, 'antiflood_state.json');
 const RE_INV = /[\s\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2800\u3164\ufeff\ufe00-\ufe0f\ufff0-\ufff8\ufffe\uffff\u{e0000}-\u{e007f}]/gu;
 const RE_INV_LINK = /[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2800\u3164\ufeff\ufe00-\ufe0f\ufff0-\ufff8\ufffe\uffff\u{e0000}-\u{e007f}]/gu;
-const ANTIFLOOD_DEFAULT = { chars: 300, windowMs: 6000, max: 5, penaltyMs: 10000, repeatWindowMs: 30000, emojiWindowMs: 60000, emojiMax: 5 };
+const ANTIFLOOD_DEFAULT = {
+  chars: 300,
+  windowMs: 6000,      // rajada: N msgs do mesmo autor na janela
+  max: 5,
+  penaltyMs: 10000,
+  // repeticao da MESMA mensagem (individual). 5 min de janela: um flood lento,
+  // de 1 copia a cada 30-40s, nao escapa mais (era o caso do print de 02/10).
+  repeatWindowMs: 300000,
+  repMs: 300000,
+  repApagar: 2,        // 2a copia -> apaga (inclusive as anteriores)
+  retroMs: 10 * 60 * 1000, // limpeza retroativa: ate 10 min de copias
+  emojiWindowMs: 60000,
+  emojiMax: 5,
+};
 // repeticao DENTRO da mesma mensagem: qualquer palavra/emoji que apareca mais de
 // REP_INTERNA_MAX vezes derruba a mensagem (nigga\nnigga\nnigga..., oi oi oi oi, 😂😂😂😂).
 // unica coisa liberada e risada de k (kkkk, k k k k, kk kk kk kk). Letra repetida
@@ -96,26 +116,16 @@ function repeticaoInterna(content) {
   return null;
 }
 const floodBuf = new Map();
-const repBuf = new Map();
 const penaltyUntil = new Map();
 
-// castigo (timeout) progressivo: repetiu 10+ vezes -> 1h, e +1h a cada reincidencia
-const MUTE_STATE = path.join(ROOT, 'mute_state.json');
 const LOGS_STATE = path.join(ROOT, 'logs_state.json');
 const BLACKLIST_STATE = path.join(ROOT, 'blacklist_state.json');
 const PALAVRAS_STATE = path.join(ROOT, 'blacklist_palavras.json'); // palavras bloqueadas pelo dono (.bloquear)
-const MUTE_BASE_MS = 60 * 60 * 1000;
-const REP_MUTE_QTD = 10;
-const repStreak = new Map(); // userId -> { sig, count }
 const emoStreak = new Map();
 const emoBuf = new Map(); // userId -> timestamps de msgs so de emoji (chuva espacada/com texto no meio)
-const shortBuf = new Map(); // userId -> msgs curtas (spam W/Ww) // userId -> qtd seguida de msgs so de emoji
-const linkBuf = new Map();   // userId -> [timestamps de links]
-const crossSigBuf = new Map(); // guildId:assinatura -> [{ts,userId}] (raid com varias contas mandando igual)
+const shortBuf = new Map(); // userId -> msgs curtas (spam W/Ww)
 const recentMsgBuf = new Map(); // channelId -> msgs recentes p/ apagar retroativo (variações rápidas)
 const RECENT_MSG_MS = 2 * 60 * 1000;
-const CROSS_SIMILAR_MS = 60 * 1000;
-const CROSS_SIMILAR_MIN = 3;
 // Link/convite robusto: pega http(s), www e dominio com TLD realista,
 // alem de convites do Discord com espacos/zero-width/fullwidth no meio
 // (ex: discord . gg /abc, canary.discord.com/invite/abc, discord://-/invite/abc).
@@ -199,10 +209,10 @@ function similarTexto(a, b) {
   }
   return (2 * inter) / (ax.length + by.length) >= 0.82;
 }
-function registrarRecente(m, reasons, now) {
+function registrarRecente(m, reasons, now, retroMs = RECENT_MSG_MS) {
   if (!m.guild) return [];
   const key = m.channelId;
-  const arr = (recentMsgBuf.get(key) || []).filter((e) => now - e.ts < RECENT_MSG_MS);
+  const arr = (recentMsgBuf.get(key) || []).filter((e) => now - e.ts < retroMs);
   const rec = {
     id: m.id,
     ts: now,
@@ -213,19 +223,45 @@ function registrarRecente(m, reasons, now) {
     suspeita: reasons.length > 0 || temLink(m.content || '') || (m.content || '').length > 220,
   };
   arr.push(rec);
-  recentMsgBuf.set(key, arr.slice(-80));
+  recentMsgBuf.set(key, arr.slice(-150));
   return arr;
 }
 async function apagarRelacionadas(m, recentes, motivo) {
   let n = 0;
   for (const e of recentes) {
     if (e.id === m.id) continue;
-    if (!e.suspeita && !similarTexto(m.content || '', e.content || '')) continue;
-    if (!similarTexto(m.content || '', e.content || '') && !temLink(e.content || '')) continue;
+    // só o MESMO autor: o anti-flood é individual (o dono não quer regra que
+    // mexe na mensagem dos outros)
+    if (e.userId !== m.author.id) continue;
+    if (!similarTexto(m.content || '', e.content || '')) continue;
     const ok = await m.channel.messages.delete(e.id).then(() => true).catch(() => false);
     if (ok) n++;
   }
   if (n) log('ANTIFLOOD_RETRO_VARIACAO', { canal: m.channelId, apagadas: n, motivo });
+  return n;
+}
+
+// limpa o backlog do MESMO autor: pega as copias que o buffer de 2 min (memoria)
+// nao alcanca mais — inclusive as que passaram antes de um restart do bot.
+// E a parte "individual" que o dono pediu: quem repetiu, perde tudo que repetiu.
+async function limparRepetidasDoAutor(m, janelaMs) {
+  let n = 0;
+  try {
+    const msgs = await m.channel.messages.fetch({ limit: 100 });
+    const alvo = msgSig(m);
+    for (const x of msgs.values()) {
+      if (x.id === m.id) continue;
+      if (!x.author || x.author.id !== m.author.id) continue;
+      if (Date.now() - x.createdTimestamp > janelaMs) continue;
+      if (msgSig(x) !== alvo) continue;
+      const ok = await x.delete().then(() => true).catch(() => false);
+      if (ok) n++;
+    }
+  } catch (e) {
+    log('ANTIFLOOD_LIMPEZA_FALHOU', { canal: m.channelId, author: m.author.id, err: e && e.message });
+  }
+  if (n) log('ANTIFLOOD_LIMPEZA', { canal: m.channelId, author: m.author.id, apagadas: n, janelaMs });
+  return n;
 }
 
 // assinatura da mensagem: vale pra TUDO (texto, emoji, figurinha, imagem, gif, embed)
@@ -302,6 +338,7 @@ function menuMsg() {
               '**`.bump`**',
               '**`.fig`**',
               '**`.bloquear`** (painel)',
+              '**`.antiflood`** (o que ele andou fazendo)',
               '**`.logs on / off / teste`**',
             ].join('\n'),
           },
@@ -455,6 +492,57 @@ function salvarPalavras(st) {
   palavrasCache = st;
   try { palavrasCacheMtime = fs.statSync(PALAVRAS_STATE).mtimeMs; } catch { palavrasCacheMtime = 0; }
   ghStateSyncTick();
+}
+
+// ---------- memoria do anti-flood (antiflood_state.json) ----------
+// rep: quantas copias da MESMA mensagem cada autor mandou (sobrevive a restart)
+// acoes/stats: o que o bot fez — fica versionado no repo, entao da pra ver que
+// o anti-flood esta vivo mesmo com o canal de logs off (era o caso em 02/10).
+let antifloodMem = null;
+function estadoAntiflood() {
+  if (antifloodMem) return antifloodMem;
+  const st = readJsonSafe(ANTIFLOOD_STATE, {});
+  antifloodMem = {
+    rep: st.rep && typeof st.rep === 'object' ? st.rep : {},
+    acoes: Array.isArray(st.acoes) ? st.acoes : [],
+    stats: st.stats && typeof st.stats === 'object' ? st.stats : {},
+    // purga da lista do dono: quando varreu, a "impressao digital" da lista e
+    // onde cada canal parou (pra continuar de onde ficou no proximo boot)
+    palavrasVarreduraEm: Number(st.palavrasVarreduraEm) || 0,
+    palavrasHash: typeof st.palavrasHash === 'string' ? st.palavrasHash : '',
+    purga: st.purga && typeof st.purga === 'object' ? st.purga : {},
+  };
+  return antifloodMem;
+}
+let antifloodPendente = null;
+function salvarAntiflood(imediato = false) {
+  const grava = () => {
+    try { fs.writeFileSync(ANTIFLOOD_STATE, JSON.stringify(estadoAntiflood(), null, 2)); } catch (e) { err(e); }
+  };
+  // o handler roda em TODA mensagem: nao da pra escrever em disco a cada uma
+  if (imediato) {
+    if (antifloodPendente) { clearTimeout(antifloodPendente); antifloodPendente = null; }
+    grava();
+    return;
+  }
+  if (antifloodPendente) return;
+  antifloodPendente = setTimeout(() => { antifloodPendente = null; grava(); }, 5000);
+  if (antifloodPendente.unref) antifloodPendente.unref();
+}
+function registrarAcaoAntiflood(rec) {
+  try {
+    const st = estadoAntiflood();
+    st.acoes.unshift({ ts: new Date().toISOString(), ...rec });
+    while (st.acoes.length > 200) st.acoes.pop();
+    const dia = new Date().toISOString().slice(0, 10);
+    st.stats[dia] = st.stats[dia] || { deteccoes: 0, apagadas: 0, castigos: 0, falhas: 0 };
+    const s = st.stats[dia];
+    s.deteccoes += 1;
+    if (rec.apagou === true) s.apagadas += Math.max(1, Number(rec.apagadas) || 1);
+    if (rec.apagou === false) s.falhas += 1;
+    if (rec.castigo) s.castigos += 1;
+    salvarAntiflood();
+  } catch (e) { err(e); }
 }
 function blacklistDel(userId) {
   const st = lerBlacklist();
@@ -707,6 +795,7 @@ client.once('ready', async () => {
   }
   // (auto-setup de blueprint removido — apenas comandos essenciais mantidos)
   if (typeof varrerLinks === 'function') varrerLinks().catch(err); else err(new Error('varrerLinks ausente no ready'));
+  if (typeof varrerPalavras === 'function') varrerPalavras().catch(err); else err(new Error('varrerPalavras ausente no ready'));
   if (typeof varrerFlood === 'function') varrerFlood().catch(err); else err(new Error('varrerFlood ausente no ready'));
   (async () => {
     const stN = readJsonSafe(NUKE_STATE, {});
@@ -900,7 +989,7 @@ client.on('typingStart', async (t) => {
 
 
 // ---------- estado persistente no repo GitHub (sobrevive a religadas/updates) ----------
-const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'logs_state.json', 'blacklist_state.json', 'blacklist_palavras.json', 'server_snapshot.json'];
+const GH_STATE_FILES = ['nuke_state.json', 'bump_state.json', 'mute_state.json', 'nuke_log.json', 'logs_state.json', 'blacklist_state.json', 'blacklist_palavras.json', 'server_snapshot.json', 'antiflood_state.json'];
 async function ghStateLoad() {
   const tok = process.env.GITHUB_TOKEN, repo = process.env.GITHUB_REPOSITORY;
   if (!tok || !repo) return;
@@ -937,6 +1026,8 @@ async function ghStateSyncTick() {
   }
 }
 const ghStatePronto = ghStateLoad();
+// o antiflood_state.json chega junto: descarta o cache lido antes do download
+ghStatePronto.then(() => { antifloodMem = null; }).catch(() => {});
 setInterval(ghStateSyncTick, 60 * 1000);
 
 // ---------- backup de estrutura do servidor (server_snapshot.json no repo) ----------
@@ -1000,47 +1091,64 @@ function figPanel(st, fim) {
 }
 
 // ---------- painel unico do .bloquear (components V2) ----------
-function bloquearPanel() {
+// Tudo por CLIQUE: cada palavra aparece num menu de seleção e, clicando nela,
+// o bot remove na hora (o dono pediu: "podia ser tudo só clicando dentro").
+// Só o "Adicionar" abre modal, porque escrever palavra nova exige teclado.
+const PALAVRAS_POR_PAGINA = 25;
+function bloquearPanel(nota = '', pagina = 0) {
   const st = lerPalavrasBloqueadas();
   const lista = listarPalavras(st);
   const total = lista.length;
-  const preview = lista.slice(0, 15).map((p, i) => `${i + 1}. \`${p.termo}\`${p.usos ? ` (${p.usos}x)` : ''}`).join('\n') || '-# nenhuma palavra bloqueada ainda';
-  const body = [
-    `**Total:** ${total} palavra(s)`,
-    '',
-    preview,
-    total > 15 ? `\n-# ...e mais ${total - 15}` : '',
-  ].filter(Boolean).join('\n');
-
-  return {
-    flags: 1 << 15,
-    components: [{
-      type: 17,
-      accent_color: 8912896,
+  const totalPags = Math.max(1, Math.ceil(total / PALAVRAS_POR_PAGINA));
+  const pag = Math.min(Math.max(0, Number(pagina) || 0), totalPags - 1);
+  const coms = [
+    { type: 10, content: '# 🔒 palavras bloqueadas\n-# clique na palavra pra desbloquear na hora — sem digitar nada' },
+  ];
+  if (total) {
+    coms.push({
+      type: 1,
+      components: [{
+        type: 3,
+        custom_id: `bloq_sel:${pag}`,
+        placeholder: 'escolha a palavra pra remover',
+        options: lista.slice(pag * PALAVRAS_POR_PAGINA, pag * PALAVRAS_POR_PAGINA + PALAVRAS_POR_PAGINA).map((p) => ({
+          label: String(p.termo).slice(0, 100),
+          value: p.chave,
+          description: `${p.usos || 0} uso(s)`.slice(0, 100),
+        })),
+      }],
+    });
+  }
+  if (totalPags > 1) {
+    coms.push({
+      type: 1,
       components: [
-        { type: 10, content: '# Painel de bloqueio\n-# gerencie as palavras que o bot apaga' },
-        { type: 14, spacing: 1, divider: true },
-        { type: 10, content: body },
-        { type: 14, spacing: 1, divider: true },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 3, label: 'Adicionar', custom_id: 'bloq_add' },
-            { type: 2, style: 4, label: 'Remover', custom_id: 'bloq_remove' },
-            { type: 2, style: 2, label: 'Listar tudo', custom_id: 'bloq_list' },
-          ]
-        },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 2, label: 'Testar frase', custom_id: 'bloq_test' },
-            { type: 2, style: 2, label: 'Atualizar', custom_id: 'bloq_refresh' },
-            { type: 2, style: 2, label: 'Fechar', custom_id: 'bloq_close' },
-          ]
-        },
+        { type: 2, style: 2, label: '◀', custom_id: `bloq_pg:${Math.max(0, pag - 1)}`, disabled: pag <= 0 },
+        { type: 2, style: 2, label: `página ${pag + 1}/${totalPags}`, custom_id: 'bloq_pg_atual', disabled: true },
+        { type: 2, style: 2, label: '▶', custom_id: `bloq_pg:${Math.min(totalPags - 1, pag + 1)}`, disabled: pag >= totalPags - 1 },
       ],
-    }],
-  };
+    });
+  }
+  coms.push({ type: 14, spacing: 1, divider: true });
+  coms.push({
+    type: 10,
+    content: [
+      `**${total}** palavra(s) bloqueada(s)${nota ? ` • ${nota}` : ''}`,
+      '-# casa por FORMAÇÃO: o termo é o COMEÇO da palavra (estupr → estupro, stupro, estuprar; deixa estudo em paz).',
+      '-# termo de 2 letras (cu, cp) só casa a palavra inteira.',
+    ].join('\n'),
+  });
+  coms.push({ type: 14, spacing: 1, divider: true });
+  coms.push({
+    type: 1,
+    components: [
+      { type: 2, style: 3, label: 'Adicionar', custom_id: 'bloq_add' },
+      { type: 2, style: 2, label: 'Testar frase', custom_id: 'bloq_test' },
+      { type: 2, style: 2, label: 'Atualizar', custom_id: 'bloq_refresh' },
+      { type: 2, style: 4, label: 'Fechar', custom_id: 'bloq_close' },
+    ],
+  });
+  return { flags: 1 << 15, components: [{ type: 17, accent_color: 8912896, components: coms }] };
 }
 
 client.on('messageCreate', async (m) => {
@@ -1215,6 +1323,41 @@ client.on('messageCreate', async (m) => {
       } catch (e) { err(e); }
       return;
     }
+    // .antiflood — o que o anti-flood andou fazendo (nao depende do canal de logs)
+    if (c === '.antiflood' || c === '.af') {
+      await m.delete().catch(() => {});
+      const stAF = estadoAntiflood();
+      const dia = new Date().toISOString().slice(0, 10);
+      const hoje = stAF.stats[dia] || { deteccoes: 0, apagadas: 0, castigos: 0, falhas: 0 };
+      const perms = m.channel.permissionsFor(m.guild.members.me);
+      const falta = perms ? missingPerms((p) => perms.has(p)) : Object.keys(PERMS_BOT_CANAL);
+      const linhaAcao = (a) => {
+        const p = [`-# ${String(a.ts || '').slice(11, 19)}`];
+        if (a.autor) p.push(`<@${a.autor}>`);
+        if (a.canal) p.push(`<#${a.canal}>`);
+        if (a.motivo) p.push('`' + corta(String(a.motivo), 50) + '`');
+        if (a.castigo) p.push(`castigo ${a.castigo}h`);
+        else if (a.castigo === 0) p.push('⚠️ castigo falhou');
+        if (a.apagou === false) p.push('⚠️ não apagou');
+        else if (a.apagou === true) p.push(`${a.apagadas || 1} apagada(s)`);
+        if (a.erro) p.push('erro: ' + corta(String(a.erro), 60));
+        return p.join(' • ');
+      };
+      const ultimas = stAF.acoes.slice(0, 8).map(linhaAcao);
+      await whSend(m.channel, [
+        '**anti-flood**',
+        `hoje: **${hoje.deteccoes}** detecções • **${hoje.apagadas}** mensagens apagadas • **${hoje.falhas}** falhas de exclusão`,
+        `autores monitorados agora: **${Object.keys(stAF.rep).length}**`,
+        `-# faxina do histórico: ${stAF.palavrasVarreduraEm ? new Date(stAF.palavrasVarreduraEm).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : 'ainda nao rodou'}`,
+        `permissões neste canal: ${falta.length ? '⚠️ faltando ' + falta.join(', ') : '✅ ok'}`,
+        '',
+        ultimas.length ? '**últimas ações:**' : '-# nenhuma ação registrada ainda',
+        ...ultimas,
+      ].join('\n')).catch((e) => err(e));
+      log('ANTIFLOOD_PAINEL', { canal: m.channelId, deteccoes: hoje.deteccoes });
+      return;
+    }
+
     // .bump
     if (c === '.bump' || c.startsWith('.bump ')) {
       const st = readJsonSafe(BUMP_STATE, {});
@@ -1278,48 +1421,28 @@ client.on('messageCreate', async (m) => {
     if (!m.guild) return;
     if (m.author.id === OWNER_ID) return; // o dono e imune: nada e apagado nele
 
-    // 0) PRIORIDADE MAXIMA: conteudo que faz o DISCORD derrubar o servidor.
-    //    Apaga na hora, antes que alguem tire print e denuncie (foi assim que
-    //    o servidor caiu: print de mensagem + denuncia = remocao definitiva
-    //    do servidor e ban do dono). Loga e avisa o dono sempre.
-    if (m.content) {
-      const den = classificarDenuncia(m.content);
-      if (den) {
-        await m.delete().catch(() => {});
-        log('DENUNCIA_APAGADA', { guild: m.guild.id, canal: m.channelId, user: m.author.id, cat: den.cat, termo: den.termo });
-        logEvento(den.grave ? '🚨 conteúdo GRAVE apagado' : '⚠️ conteúdo denunciável apagado', [
-          `**Categoria:** \`${den.cat}\``,
-          `**Conta:** <@${m.author.id}> (\`${m.author.id}\`)`,
-          `**Canal:** <#${m.channelId}>`,
-          `**Mensagem:** \`${m.id}\``,
-          `**Trecho:** ${corta(limparCodigo(m.content), 900)}`,
-          den.grave ? '-# isso derruba servidor e ban o dono. O ban é por sua conta.' : '',
-        ].filter(Boolean), den.cor);
-        avisarDono([
-          den.grave ? '🚨 **alerta grave** — isso derruba servidor:' : '⚠️ apaguei uma mensagem denunciável:',
-          `**Categoria:** \`${den.cat}\``,
-          `**Quem:** <@${m.author.id}> (\`${m.author.id}\`)`,
-          `**Trecho:** ${corta(limparCodigo(m.content), 300)}`,
-        ].join('\n')).catch(() => {});
-        return; // nao cai no anti-flood: ja foi tratado (sem mute/timeout/ban por filtro)
-      }
-    }
-    // 0.5) palavras que o DONO bloqueou (.bloquear): apaga e registra no canal
-    //      de logs. Sem castigo (nem mute, nem ban) — igual ao filtro de denuncia.
+    // 0) ÚNICO filtro de conteúdo: a lista DO DONO (.bloquear). O filtro de
+    //    denúncia sai do ao vivo a pedido dele (02/10): quem cuida das palavras
+    //    agora é a lista dele, que casa por formação. Sem castigo: apaga e
+    //    registra (o dono vê no .antiflood e nos logs). A classificação de
+    //    denúncia continua só na faxina do histórico (ver motivosLegado).
     if (m.content) {
       const stPal = lerPalavrasBloqueadas();
       const hit = casarPalavras(m.content, stPal);
       if (hit) {
         registrarUso(stPal, hit.chave);
         salvarPalavras(stPal);
-        await m.delete().catch(() => {});
-        log('PALAVRA_BLOQUEADA', { guild: m.guild.id, canal: m.channelId, user: m.author.id, termo: hit.termo, usos: hit.entrada.usos });
+        const apagouPal = await m.delete().then(() => true).catch(() => false);
+        if (!apagouPal) avisarFalhaDelete(m, `bloqueio:${hit.termo}`, 'delete falhou').catch(err);
+        log('PALAVRA_BLOQUEADA', { guild: m.guild.id, canal: m.channelId, user: m.author.id, termo: hit.termo, usos: hit.entrada.usos, apagou: apagouPal });
+        registrarAcaoAntiflood({ canal: m.channelId, guild: m.guild.id, autor: m.author.id, motivo: `bloqueio:${hit.termo}`, apagou: apagouPal, apagadas: apagouPal ? 1 : 0, tipo: 'palavra' });
         logEvento('🚫 palavra bloqueada', [
           `**Palavra:** \`${hit.termo}\``,
           `**Conta:** <@${m.author.id}> (\`${m.author.id}\`)`,
           `**Canal:** <#${m.channelId}>`,
           `**Trecho:** ${corta(limparCodigo(m.content), 300)}`,
-        ], 0x992d22);
+          apagouPal ? '' : '⚠️ **não consegui apagar** (confira minhas permissões neste canal).',
+        ].filter(Boolean), 0x992d22);
         return;
       }
     }
@@ -1342,13 +1465,13 @@ client.on('messageCreate', async (m) => {
       if (rep) reasons.push(rep);
     }
 
-    // 1.6) asterisco (markdown quebrado tipo **teste*): apaga na hora, sem castigo
+    // 1.6) asterisco (markdown quebrado tipo **teste*): apaga na hora, sem mais nada
     if ((m.content || '').includes('*')) reasons.push('asterisco');
 
-    // 1.6b) comeca com # (tenta virar texto grande/bold): apaga na hora, sem castigo
+    // 1.6b) comeca com # (tenta virar texto grande/bold): apaga na hora
     if (/^#/.test((m.content || '').trim())) reasons.push('header');
 
-    // 1.7) mensagem invisivel (so espacos/zero-width/tags unicode): apaga na hora; grande = castigo
+    // 1.7) mensagem invisivel (so espacos/zero-width/tags unicode): apaga na hora
     {
       const bruto = m.content || '';
       const visivel = bruto.replace(RE_INV, '');
@@ -1357,48 +1480,30 @@ client.on('messageCreate', async (m) => {
       }
     }
 
-    // 1.8) repeticao distribuida: varias contas/webhook mandando o mesmo texto.
-    // cobre o caso que passa por baixo dos limites por-usuario
-    // (cada conta manda so 1 mensagem). Nao ativa modo global/canal.
-    {
-      const suspeitaBase = reasons.some((r) => /^(link|header|invisivel|asterisco|chars>|repeticao-)/.test(r));
-      const sig = msgSig(m);
-      if ((suspeitaBase || sig.length >= 80) && sig !== 'vazia') {
-        const k = `${m.guild.id}:${sig.slice(0, 220)}`;
-        const arr = (crossSigBuf.get(k) || []).filter((e) => now - e.ts < 60 * 1000);
-        arr.push({ ts: now, userId: m.author.id });
-        crossSigBuf.set(k, arr);
-        const usuarios = new Set(arr.map((e) => e.userId));
-        if (arr.length >= 3 && (usuarios.size >= 3 || m.webhookId)) reasons.push('raid-repetida');
-      }
-
-      // variação rápida: texto quase igual, mas com pontuação/espaço/invisível
-      // diferente. Quando bater, apaga também as cópias recentes parecidas.
-      if (suspeitaBase || (m.content || '').length >= 80) {
-        const recentes = (recentMsgBuf.get(m.channelId) || []).filter((e) => now - e.ts < CROSS_SIMILAR_MS && e.id !== m.id);
-        const parecidas = recentes.filter((e) => similarTexto(m.content || '', e.content || ''));
-        const usuarios = new Set(parecidas.map((e) => e.userId));
-        if (parecidas.length >= CROSS_SIMILAR_MIN - 1 && (usuarios.size >= 2 || m.webhookId)) reasons.push('raid-parecida');
-      }
-
-    }
-
-    // 2) mensagem repetida: compara com as ultimas do mesmo autor (pega
-    //    "emoji, emoji" e tambem "emoji1, emoji2, emoji1" alternado)
-    //    assinatura cobre texto, emoji, figurinha, imagem/gif, arquivo e embed
+    // 2) repeticao da MESMA mensagem pelo MESMO autor — a regra individual
+    //    principal. O contador mora em antiflood_state.json (persiste):
+    //      a partir da 2a copia na janela -> apaga essa, as anteriores e o
+    //      backlog do autor. SEM castigo (o dono nao quer timeout): so apagar.
+    //    Janela de 5 min: pega o flood lento (1 copia a cada ~40s) que a janela
+    //    antiga de 30s deixava passar — e que tambem se perdia a cada restart
+    //    do bot, porque o contador era so memoria.
+    let repeticaoAgora = null;
     {
       const sig = msgSig(m);
-      const hist = repBuf.get(m.author.id) || [];
-      if (hist.some((h) => h.sig === sig && now - h.ts < cfg.repeatWindowMs)) {
-        reasons.push('repetida');
-      } else if (hist.filter((h) => h.sig === sig && now - h.ts < cfg.repeatWindowMs * 5).length >= 4) {
-        // repeticao ESPACADA (1 copia a cada ~35s): passa pela janela curta,
-        // mas 5 copias do mesmo conteudo em 2,5min ainda e spam
-        reasons.push('repetida-lenta');
+      const txt = (m.content || '').trim();
+      const soEmoji = txt.length > 0 && /^[\p{Extended_Pictographic}\p{Emoji_Component}\u200d\ufe0f\s]+$/u.test(txt);
+      // mensagem curtinha/emoji: janela CURTA (30s), senao "kkk" ou o mesmo
+      // emoji duas vezes em 5 min de conversa normal cairia como flood
+      const cfgRep = soEmoji || sig.length < 8 ? { ...cfg, repMs: Math.min(30000, cfg.repMs || 30000) } : cfg;
+      const stAF = estadoAntiflood();
+      const rep = registrarRepeticao(stAF.rep, { userId: m.author.id, sig, agora: now, cfg: cfgRep });
+      const decisao = decidirRepeticao(rep.qtd, cfg);
+      if (decisao) {
+        repeticaoAgora = { ...rep, decisao };
+        reasons.push(`repetiu-${rep.qtd}x`);
       }
-      hist.push({ sig, ts: now });
-      while (hist.length > 8) hist.shift();
-      repBuf.set(m.author.id, hist);
+      podarLedger(stAF.rep, now, cfg);
+      salvarAntiflood();
     }
 
     // 3) penalidade ativa: quem floodou tem tudo apagado durante o cooldown
@@ -1423,21 +1528,12 @@ client.on('messageCreate', async (m) => {
       }
     }
 
-    // 5) repetiu a MESMA mensagem mais de 10 vezes -> castigo progressivo + apaga
-    {
-      const sig = msgSig(m);
-      const s = repStreak.get(m.author.id);
-      const streak = s && s.sig === sig ? { sig, count: s.count + 1 } : { sig, count: 1 };
-      repStreak.set(m.author.id, streak);
-      if (streak.count > REP_MUTE_QTD) {
-        await aplicarCastigo(m, 'repetir a mesma mensagem 10+ vezes');
-        reasons.push('rep-muitas'); // antes o castigo nao apagava nada: spam ficava de pe
-      }
-    }
+    // 5) (removido) castigo por 10+ repeticoes: a regra 2 ja apaga desde a 2a
+    //    copia e o dono nao quer castigo nenhum — só apagar.
 
-    // 5b) 5+ mensagens so de emoji -> castigo progressivo + apaga.
-    //     conta seguidas (comportamento antigo) E por janela de tempo: texto
-    //     no meio nao zera mais a chuva (5 emojis em 60s cai mesmo com "oi" entre eles)
+    // 5b) 5+ mensagens so de emoji -> apaga (sem castigo). Conta seguidas E por
+    //     janela: texto no meio nao zera mais a chuva (5 emojis em 60s cai
+    //     mesmo com "oi" entre eles)
     {
       const txt = (m.content || '').trim();
       const soEmoji = txt.length > 0 && /^[\p{Extended_Pictographic}\p{Emoji_Component}\u200d\ufe0f\s]+$/u.test(txt);
@@ -1447,10 +1543,7 @@ client.on('messageCreate', async (m) => {
         const arr = (emoBuf.get(m.author.id) || []).filter((t) => now - t < cfg.emojiWindowMs);
         arr.push(now);
         emoBuf.set(m.author.id, arr);
-        if (q >= 5 || arr.length >= (cfg.emojiMax || 5)) {
-          await aplicarCastigo(m, 'chuva de emojis');
-          reasons.push('chuva-emojis'); // antes o castigo nao apagava nada: spam ficava de pe
-        }
+        if (q >= 5 || arr.length >= (cfg.emojiMax || 5)) reasons.push('chuva-emojis');
       } else {
         emoStreak.delete(m.author.id);
       }
@@ -1475,34 +1568,40 @@ client.on('messageCreate', async (m) => {
       }
     }
 
-    // 6) chuva de link: 10+ links em 10 minutos -> castigo progressivo + apaga
-    if (temLink(m.content || '')) {
-      const arr = (linkBuf.get(m.author.id) || []).filter((t) => now - t < 10 * 60 * 1000);
-      arr.push(now);
-      linkBuf.set(m.author.id, arr);
-      if (arr.length > REP_MUTE_QTD) {
-        await aplicarCastigo(m, 'mandar link 10+ vezes');
-        reasons.push('link-muitos'); // antes o castigo nao apagava nada: spam ficava de pe
-      }
-    }
+    // 6) (removido) chuva de link e o antigo castigo por link: o filtro de link
+    //    saiu a pedido do dono, e timeout nao existe mais.
 
-    const recentes = registrarRecente(m, reasons, now);
+    const recentes = registrarRecente(m, reasons, now, cfg.retroMs || RECENT_MSG_MS);
     if (reasons.length) {
       const motivo = reasons.join('+');
-      await apagarRelacionadas(m, recentes, motivo).catch(err);
-      const apagou = await m.delete().then(() => true).catch((e) => {
-        log('ANTIFLOOD_DELETE_FAIL', { reason: motivo, author: m.author.id, channel: m.channelId, deletable: m.deletable, err: e && e.message });
-        avisarFalhaDelete(m, motivo, e && e.message).catch(err);
-        return false;
+      let retro = await apagarRelacionadas(m, recentes, motivo).catch((e) => { err(e); return 0; });
+      // quem repetiu a MESMA mensagem perde tambem o backlog que o buffer em
+      // memoria nao alcanca (mensagens de antes do restart, flood lento)
+      if (repeticaoAgora) retro += await limparRepetidasDoAutor(m, cfg.retroMs || RECENT_MSG_MS).catch(() => 0);
+      // apaga a mensagem atual; se falhar, tenta se curar (canal sem permissao:
+      // nuke/overwrite quebrado) e so entao avisa o dono — sem silencio
+      let apagou = await m.delete().then(() => true).catch(() => false);
+      if (!apagou) {
+        const curou = await garantirPermModeracao(m.guild, m.channel).catch(() => false);
+        if (curou) apagou = await m.delete().then(() => true).catch(() => false);
+        if (!apagou) {
+          log('ANTIFLOOD_DELETE_FAIL', { reason: motivo, author: m.author.id, channel: m.channelId, deletable: m.deletable, curou });
+          avisarFalhaDelete(m, motivo, 'delete falhou (mesmo depois de tentar consertar a permissão)').catch(err);
+        }
+      }
+      const apagadas = (apagou ? 1 : 0) + retro;
+      log('ANTIFLOOD', { reason: motivo, kind: msgKind(m), author: m.author.id, channel: m.channelId, len: m.content.length, apagou, retro });
+      registrarAcaoAntiflood({
+        canal: m.channelId, guild: m.guild.id, autor: m.author.id, motivo,
+        apagou, apagadas, tipo: msgKind(m),
       });
-      log('ANTIFLOOD', { reason: motivo, kind: msgKind(m), author: m.author.id, channel: m.channelId, len: m.content.length, apagou });
       // visivel pro dono: antes a acao ia so pro console do runner e parecia
       // que o bot "nao fazia nada" no servidor
       logEvento('🛡️ Anti-flood', [
         `**Conta:** <@${m.author.id}>`,
         `**Canal:** <#${m.channelId}>`,
         `**Motivo:** \`${motivo}\``,
-        apagou ? '**Mensagem apagada.**' : '⚠️ **Não consegui apagar** (confira as permissões).',
+        apagou ? `**Mensagens apagadas:** ${apagadas}${retro ? ` (${retro} retroativa${retro > 1 ? 's' : ''})` : ''}` : '⚠️ **Não consegui apagar** (confira as permissões).',
       ], apagou ? 0xe67e22 : 0xff4444);
     }
   } catch (e) {
@@ -1514,9 +1613,15 @@ client.on('messageCreate', async (m) => {
 // silencioso: avisa o dono 1x por canal a cada 30min e registra no canal de logs
 const falhaDeleteAvisoEm = new Map(); // channelId -> ts do ultimo aviso
 async function avisarFalhaDelete(m, motivo, erro) {
-  const codigo = Number(erro && (erro.code || erro.status)) || 0;
+  const codigo = Number((erro && erro.code) || (erro && erro.status)) || 0;
   const semPerm = !m.deletable || [50001, 50013].includes(codigo);
   const agora = Date.now();
+  // toda falha fica registrada no antiflood_state.json (versionado no repo):
+  // mesmo com o canal de logs off, da pra ver depois que o bot TENTOU e falhou
+  registrarAcaoAntiflood({
+    canal: m.channelId, guild: m.guild && m.guild.id, autor: m.author.id, motivo,
+    apagou: false, erro: corta(String(erro || 'desconhecido'), 120),
+  });
   const ultimo = falhaDeleteAvisoEm.get(m.channelId) || 0;
   if (agora - ultimo < 30 * 60 * 1000) return;
   falhaDeleteAvisoEm.set(m.channelId, agora);
@@ -1526,63 +1631,24 @@ async function avisarFalhaDelete(m, motivo, erro) {
     `**Erro:** ${erro || 'desconhecido'}`,
     semPerm ? 'Preciso de **Gerenciar Mensagens** (e Histórico) neste canal.' : 'Confira as permissões do bot.',
   ], 0xff4444);
+  // aviso no proprio canal: se o bot nao consegue apagar, todo mundo ve que ele
+  // ao menos detectou — e o dono fica sabendo por DM, nao por acaso
+  const tmp = await whSend(m.channel, `⚠️ detectei flood de <@${m.author.id}> mas **não consegui apagar** (${semPerm ? 'falta Gerenciar Mensagens neste canal' : 'erro: ' + (erro || '?')}). já avisei o dono.`).catch(() => null);
+  if (tmp) setTimeout(() => tmp.delete().catch(() => {}), 20000);
   await avisarDono(`⚠️ Não consegui apagar spam em <#${m.channelId}> (motivo: ${motivo}). ${semPerm ? 'Falta permissão de Gerenciar Mensagens neste canal.' : 'Erro: ' + (erro || '?')}`);
 }
 
-// ---------- essas 4 viviam presas DENTRO do messageCreate: por isso o ready nao achava varrerLinks ----------
-async function aplicarCastigo(m, motivo) {
-  return castigar(m.guild, m.author.id, motivo, { member: m.member, canal: m.channel });
-}
-
-// castigo progressivo do anti-flood: 1h, 2h, 3h...
-async function castigar(guild, userId, motivo, opts = {}) {
-  const st = readJsonSafe(MUTE_STATE, {});
-  const rec = st[userId] || { level: 0, until: 0 };
-  if (Date.now() < rec.until) return null; // ja esta de castigo agora
-  rec.level += 1;
-  const horas = rec.level;
-  rec.until = Date.now() + horas * MUTE_BASE_MS;
-  st[userId] = rec;
-  fs.writeFileSync(MUTE_STATE, JSON.stringify(st, null, 2));
-  repStreak.delete(userId);
-  linkBuf.delete(userId);
-  const membro = opts.member || (guild ? await guild.members.fetch(userId).catch(() => null) : null);
-  const aviso = `Você tomou castigo de ${horas} hora${horas > 1 ? 's' : ''}. Caso continue floodando, o tempo aumentará pra ${horas + 1} horas e assim consecutivamente.`;
-  try {
-    if (membro) await membro.timeout(horas * MUTE_BASE_MS, 'flood: ' + motivo);
-    log('CASTIGO', { author: userId, horas, motivo });
-    logEvento('⏱️ Castigo anti-flood', [
-      `**Conta:** <@${userId}>`,
-      `**Tempo:** ${horas} hora${horas > 1 ? 's' : ''}`,
-      `**Motivo:** \`${motivo}\``,
-    ], 0xc0392b);
-  } catch (e) {
-    err(e);
-    log('CASTIGO_FAIL', { author: userId, horas, motivo, err: e && e.message });
-    logEvento('⚠️ Castigo não aplicado', [
-      `**Conta:** <@${userId}>`,
-      `**Motivo:** \`${motivo}\``,
-      `**Erro:** ${e && e.message}`,
-      'Preciso de **Moderar membros** acima do cargo da pessoa.',
-    ], 0xff4444);
-    await avisarDono(`⚠️ Não consegui aplicar castigo (${horas}h) em <@${userId}> por "${motivo}". Confira minha permissão Moderar membros e a hierarquia de cargos.`).catch(() => {});
-  }
-  // aviso so pra pessoa: o Discord nao deixa mensagem invisivel solta, entao vai por DM (privada)
-  const alvo = membro || await client.users.fetch(userId).catch(() => null);
-  const dmOk = alvo ? await alvo.send(aviso).then(() => true).catch(() => false) : false;
-  if (!dmOk) {
-    const ch = opts.canal || (opts.channelId && guild ? await guild.channels.fetch(opts.channelId).catch(() => null) : null);
-    if (ch) {
-      const tmp = await whSend(ch, `<@${userId}> ${aviso}`).catch(() => null);
-      if (tmp) setTimeout(() => tmp.delete().catch(() => {}), 15000);
-    }
-  }
-  return { horas, aviso };
-}
+// ---------- anti-flood: só apagar ----------
+// (castigo/timeout removido a pedido do dono, 02/10: "n preciso do castigo
+//  de jeito nenhum, só apagar mesmo". Nada aqui aplica timeout.)
 
 // varre os canais ao ligar: apaga sobra de flood/repetida/invisivel que passou durante o gap do restart
 async function varrerFlood() {
-  const cfgChars = (readJsonSafe(ANTIFLOOD_CFG, ANTIFLOOD_DEFAULT).chars) || ANTIFLOOD_DEFAULT.chars;
+  const cfgV = readJsonSafe(ANTIFLOOD_CFG, ANTIFLOOD_DEFAULT);
+  const cfgRetro = cfgV.retroMs || ANTIFLOOD_DEFAULT.retroMs;
+  const cfgChars = cfgV.chars || ANTIFLOOD_DEFAULT.chars;
+  // contadores de repeticao velhos nao precisam sobreviver no estado
+  try { podarLedger(estadoAntiflood().rep, Date.now(), cfgV); salvarAntiflood(); } catch (e) { err(e); }
   for (const gid of INFERNO_GUILDS) {
     const g = client.guilds.cache.get(gid);
     if (!g) continue;
@@ -1597,6 +1663,23 @@ async function varrerFlood() {
           arr.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
           for (let i = 1; i < arr.length; i++) {
             if (msgSig(arr[i]) === msgSig(arr[i - 1]) && arr[i].createdTimestamp - arr[i - 1].createdTimestamp < 30000) alvos.add(arr[i]);
+          }
+          // o MESMO autor repetindo a MESMA mensagem 3+ vezes em ate 10 min
+          // (qualquer espacamento): o flood lento que o corte de 30s acima
+          // deixava de pe no boot do bot
+          const porSig = new Map();
+          for (const x of arr) {
+            const s = msgSig(x);
+            if (!porSig.has(s)) porSig.set(s, []);
+            porSig.get(s).push(x);
+          }
+          for (const grupo of porSig.values()) {
+            if (grupo.length < 3) continue;
+            for (let i = 2; i < grupo.length; i++) {
+              if (grupo[i].createdTimestamp - grupo[i - 2].createdTimestamp < cfgRetro) {
+                alvos.add(grupo[i - 2]); alvos.add(grupo[i - 1]); alvos.add(grupo[i]);
+              }
+            }
           }
           const curtas = arr.filter((x) => { const v = (x.content || '').trim(); return v.length > 0 && v.length <= 3; });
           for (let i = 5; i < curtas.length; i++) {
@@ -1637,6 +1720,107 @@ async function varrerLinks() {
   }
 }
 
+// ---------- filtros antigos (so para a faxina do historico) ----------
+// "apague todas as mensagens do filtro meu e seu que já tinha no código"
+// (dono, 02/10): estas regras nao filtram mais nada ao vivo, mas marcam o que
+// ja estava salvo e que os filtros antigos teriam apagado.
+function motivosLegado(x, cfg) {
+  const c = (x && x.content) || '';
+  const charsMax = (cfg && cfg.chars) || ANTIFLOOD_DEFAULT.chars;
+  const ms = [];
+  if (c.length > charsMax) ms.push(`chars>${charsMax}`);
+  if (temLink(c)) ms.push('link');
+  if (temLinkCdn(x)) ms.push('link-cdn');
+  const rep = repeticaoInterna(c);
+  if (rep) ms.push(rep);
+  if (c.includes('*')) ms.push('asterisco');
+  if (/^#/.test(c.trim())) ms.push('header');
+  if (c && !c.replace(RE_INV, '')) ms.push('invisivel');
+  const den = classificarDenuncia(c);
+  if (den) ms.push(`denuncia:${den.cat}`);
+  return ms;
+}
+
+// ---------- purga da lista do dono ----------
+// "quero que apague todas que estejam salvas no sistema que eu coloquei" (02/10):
+// nao basta pegar o que chega depois do deploy — no boot o bot varre o historico
+// de cada canal e apaga tudo que casa com a lista do dono. Roda no maximo 1x a
+// cada PURGA_INTERVALO_MS, e na hora de novo se a lista mudou.
+const PURGA_PAGINAS = 50; // 50 x 100 msgs por canal a cada rodada
+const PURGA_INTERVALO_MS = 60 * 60 * 1000;
+async function varrerPalavras() {
+  const st = lerPalavrasBloqueadas();
+  const cfgLegado = readJsonSafe(ANTIFLOOD_CFG, ANTIFLOOD_DEFAULT);
+  const stAF = estadoAntiflood();
+  const hash = Object.keys(st.palavras).sort().join('|') + '|legado-v1';
+  const agora = Date.now();
+  if (stAF.palavrasHash === hash && agora - (stAF.palavrasVarreduraEm || 0) < PURGA_INTERVALO_MS) return;
+  if (stAF.palavrasHash !== hash) stAF.purga = {}; // lista mudou: recomeça do topo
+  stAF.palavrasHash = hash;
+  stAF.palavrasVarreduraEm = agora;
+  salvarAntiflood(true);
+  const antigo = stAF.purga && typeof stAF.purga === 'object' ? stAF.purga : {};
+  const purgaNova = {};
+  let total = 0, falhas = 0;
+  const porTermo = {};
+  for (const gid of INFERNO_GUILDS) {
+    const g = client.guilds.cache.get(gid);
+    if (!g) continue;
+    for (const ch of [...g.channels.cache.values()]) {
+      if (!ch.isTextBased()) continue;
+      if (antigo[ch.id] === 'fim') { purgaNova[ch.id] = 'fim'; continue; } // ja varreu o canal inteiro
+      let antes = antigo[ch.id] || null;
+      let acabou = false;
+      for (let pag = 0; pag < PURGA_PAGINAS; pag++) {
+        const lote = await ch.messages.fetch(antes ? { limit: 100, before: antes } : { limit: 100 }).catch(() => null);
+        if (!lote || !lote.size) { acabou = true; break; }
+        const alvos = new Map();
+        for (const x of lote.values()) {
+          if (!x.deletable || x.author.id === OWNER_ID) continue; // dono e imune
+          if (x.author.bot && !x.webhookId) continue;             // bots reais fora
+          if (isOwnWebhookId(x.webhookId)) continue;              // nossos paineis/logs
+          const hit = casarPalavras(x.content, st);
+          if (hit) {
+            alvos.set(x.id, x);
+            const m = `lista:${hit.termo}`;
+            porTermo[m] = (porTermo[m] || 0) + 1;
+            continue;
+          }
+          const antigos = motivosLegado(x, cfgLegado);
+          if (antigos.length) {
+            alvos.set(x.id, x);
+            porTermo[antigos[0]] = (porTermo[antigos[0]] || 0) + 1;
+          }
+        }
+        if (alvos.size) {
+          const apagadas = await ch.bulkDelete([...alvos.keys()], true).catch(() => null);
+          let n = apagadas ? apagadas.size : 0;
+          for (const x of alvos.values()) {
+            if (apagadas && apagadas.has(x.id)) continue; // ja foi no bulk
+            const ok = await x.delete().then(() => true).catch(() => false);
+            if (ok) n++; else falhas++;
+          }
+          total += n;
+          registrarAcaoAntiflood({ canal: ch.id, guild: g.id, motivo: 'faxina-historico', apagou: n > 0, apagadas: n });
+        }
+        const maisAntiga = [...lote.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp)[0];
+        antes = maisAntiga.id;
+        if (lote.size < 100) { acabou = true; break; }
+      }
+      purgaNova[ch.id] = acabou ? 'fim' : antes; // guarda a posicao pra continuar no proximo boot
+      stAF.purga = purgaNova;
+      salvarAntiflood(true);
+    }
+  }
+  if (total || falhas) {
+    const termos = Object.entries(porTermo).map(([t, n]) => `${t} (${n})`).join(', ');
+    log('PURGA_PALAVRAS', { apagadas: total, falhas, motivos: porTermo });
+    logEvento('🧹 Faxina do histórico (bloqueio + filtros antigos)', [
+      `**Mensagens antigas apagadas:** ${total}${falhas ? ` • **falhas:** ${falhas}` : ''}`,
+      termos ? `**Motivos:** ${corta(termos, 300)}` : '',
+    ].filter(Boolean), 0x992d22);
+  }
+}
 
 client.on('interactionCreate', async (i) => {
   // botoes dos logs (so o dono)
@@ -1748,7 +1932,7 @@ client.on('interactionCreate', async (i) => {
             custom_id: 'palavras_input',
             label: 'Palavras (separe por vírgula)',
             style: 2,
-            placeholder: 'ex: cu, bosta, vai se fuder',
+            placeholder: 'ex: estupr, molest, pedo — o começo da palavra já basta',
             required: true,
             max_length: 1000,
           }]
@@ -1756,23 +1940,11 @@ client.on('interactionCreate', async (i) => {
       }).catch((e) => err(e));
       return;
     }
-    if (id === 'bloq_remove') {
-      await i.showModal({
-        custom_id: 'bloq_modal_remove',
-        title: 'Remover palavras',
-        components: [{
-          type: 1,
-          components: [{
-            type: 4,
-            custom_id: 'palavras_input',
-            label: 'Palavras para remover',
-            style: 2,
-            placeholder: 'ex: cu, bosta',
-            required: true,
-            max_length: 1000,
-          }]
-        }]
-      }).catch((e) => err(e));
+    // paginação do menu (mostra 25 palavras por página)
+    if (id.startsWith('bloq_pg:')) {
+      await i.deferUpdate().catch(() => {});
+      const pag = Number(id.split(':')[1]) || 0;
+      await whEdit(i.channel, i.message.id, bloquearPanel('', pag)).catch(() => {});
       return;
     }
     if (id === 'bloq_test') {
@@ -1794,27 +1966,6 @@ client.on('interactionCreate', async (i) => {
       }).catch((e) => err(e));
       return;
     }
-    if (id === 'bloq_list') {
-      await i.deferUpdate().catch(() => {});
-      const st = lerPalavrasBloqueadas();
-      const lista = listarPalavras(st);
-      if (!lista.length) {
-        await whSend(i.channel, 'nenhuma palavra bloqueada ainda.').catch(() => {});
-        return;
-      }
-      const linhas = lista.map((p, idx) => `${idx + 1}. \`${p.termo}\`${p.usos ? ` (${p.usos}x)` : ''}`);
-      let atual = '';
-      const paginas = [];
-      for (const l of linhas) {
-        if (atual.length + l.length + 1 > 1800) { paginas.push(atual); atual = ''; }
-        atual += (atual ? '\n' : '') + l;
-      }
-      if (atual) paginas.push(atual);
-      for (const [idx, pg] of paginas.entries()) {
-        await whSend(i.channel, `**${lista.length} palavra(s) bloqueada(s)**${paginas.length > 1 ? ` (${idx + 1}/${paginas.length})` : ''}:\n${pg}`).catch(() => {});
-      }
-      return;
-    }
     if (id === 'bloq_refresh') {
       await i.deferUpdate().catch(() => {});
       await whEdit(i.channel, i.message.id, bloquearPanel()).catch(() => {});
@@ -1825,6 +1976,33 @@ client.on('interactionCreate', async (i) => {
       await i.message.delete().catch(() => {});
       return;
     }
+    // qualquer botão do painel antigo ("Remover", "Listar tudo"...): só
+    // re-renderiza no formato novo, pra ninguém ficar preso no modelo velho
+    await i.deferUpdate().catch(() => {});
+    await whEdit(i.channel, i.message.id, bloquearPanel()).catch(() => {});
+    return;
+  }
+
+  // menu do painel: clicou na palavra -> remove na hora (sem modal, sem digitar)
+  if (i.isStringSelectMenu && i.isStringSelectMenu() && String(i.customId || '').startsWith('bloq_sel')) {
+    if (i.user.id !== OWNER_ID) {
+      await i.reply({ content: 'só o dono usa isso.', ephemeral: true }).catch(() => {});
+      return;
+    }
+    const pag = Number(String(i.customId).split(':')[1]) || 0;
+    const chaveSel = (i.values && i.values[0]) || '';
+    const st = lerPalavrasBloqueadas();
+    const alvo = (st.palavras && st.palavras[chaveSel]) || null;
+    const termo = alvo ? alvo.termo : chaveSel;
+    const r = removerPalavras(st, [chaveSel]);
+    if (r.removidas.length) salvarPalavras(st);
+    log('BLOQ_DEL_CLIQUE', { por: i.user.id, termo, removida: r.removidas.length > 0 });
+    await i.deferUpdate().catch(() => {});
+    const restou = Object.keys(st.palavras || {}).length;
+    const pagFinal = Math.min(pag, Math.max(0, Math.ceil(restou / PALAVRAS_POR_PAGINA) - 1));
+    const nota = r.removidas.length ? `🗑️ removida: \`${termo}\`` : `⚠️ não achei \`${termo}\``;
+    await whEdit(i.channel, i.message.id, bloquearPanel(nota, pagFinal)).catch(() => {});
+    return;
   }
 
   // modals do bloquear
@@ -1855,19 +2033,15 @@ client.on('interactionCreate', async (i) => {
         ].filter(Boolean).join('\n'),
         ephemeral: true
       }).catch(() => {});
-      // atualiza painel original se possível
-      try {
-        const ch = i.channel;
-        const msgId = i.message && i.message.id ? null : null; // modal não tem message id do painel, então tenta editar última?
-        // tenta atualizar o painel mais recente no canal
-        const msgs = await ch.messages.fetch({ limit: 20 }).catch(() => null);
-        if (msgs) {
-          const painel = [...msgs.values()].find(m => m.webhookId && m.content === '' && m.components && m.components.length);
-          // fallback: apenas manda painel novo
-        }
-      } catch {}
-      // manda painel atualizado como follow-up
-      await whSend(i.channel, bloquearPanel()).catch(() => {});
+      // atualiza o painel NO LUGAR (o modal guarda o link da mensagem); se não
+      // der, manda um painel novo — antes ficava acumulando painel no canal
+      const notaAdd = r.adicionadas.length ? `➕ ${r.adicionadas.length} nova(s)` : 'nada novo';
+      if (i.message && i.message.id) {
+        const okEdit = await whEdit(i.channel, i.message.id, bloquearPanel(notaAdd)).then(() => true).catch(() => false);
+        if (!okEdit) await whSend(i.channel, bloquearPanel(notaAdd)).catch(() => {});
+      } else {
+        await whSend(i.channel, bloquearPanel(notaAdd)).catch(() => {});
+      }
       log('BLOQ_ADD', { por: i.user.id, termos: r.adicionadas, total });
       return;
     }
@@ -1890,7 +2064,13 @@ client.on('interactionCreate', async (i) => {
         ].filter(Boolean).join('\n'),
         ephemeral: true
       }).catch(() => {});
-      await whSend(i.channel, bloquearPanel()).catch(() => {});
+      const notaDel = r.removidas.length ? `🗑️ ${r.removidas.length} removida(s)` : 'nada removido';
+      if (i.message && i.message.id) {
+        const okEdit = await whEdit(i.channel, i.message.id, bloquearPanel(notaDel)).then(() => true).catch(() => false);
+        if (!okEdit) await whSend(i.channel, bloquearPanel(notaDel)).catch(() => {});
+      } else {
+        await whSend(i.channel, bloquearPanel(notaDel)).catch(() => {});
+      }
       log('BLOQ_DEL', { por: i.user.id, termos: r.removidas, total });
       return;
     }
@@ -1899,7 +2079,9 @@ client.on('interactionCreate', async (i) => {
       const st = lerPalavrasBloqueadas();
       const hit = casarPalavras(frase, st);
       await i.reply({
-        content: hit ? `🚫 cai na palavra bloqueada \`${hit.termo}\`.` : '✅ não cai em nenhuma palavra bloqueada.',
+        content: hit
+          ? `🚫 cai na palavra bloqueada \`${hit.termo}\` (casamento por formação).`
+          : '✅ não cai em nenhuma palavra bloqueada.',
         ephemeral: true
       }).catch(() => {});
       return;
