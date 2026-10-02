@@ -32,7 +32,6 @@ const ANTIFLOOD_CFG = path.join(ROOT, 'antispam_config.json');
 // vive no repo igual mute_state.json, entao reiniciar o bot NAO zera a conta de
 // quem estava floodando — era assim que um flood lento passava entre religadas.
 const ANTIFLOOD_STATE = path.join(ROOT, 'antiflood_state.json');
-const RE_INV = /[\s\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2800\u3164\ufeff\ufe00-\ufe0f\ufff0-\ufff8\ufffe\uffff\u{e0000}-\u{e007f}]/gu;
 const RE_INV_LINK = /[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2800\u3164\ufeff\ufe00-\ufe0f\ufff0-\ufff8\ufffe\uffff\u{e0000}-\u{e007f}]/gu;
 const ANTIFLOOD_DEFAULT = {
   chars: 300,
@@ -48,70 +47,6 @@ const ANTIFLOOD_DEFAULT = {
   emojiWindowMs: 60000,
   emojiMax: 5,
 };
-// repeticao DENTRO da mesma mensagem: qualquer palavra/emoji que apareca mais de
-// REP_INTERNA_MAX vezes derruba a mensagem (nigga\nnigga\nnigga..., oi oi oi oi, 😂😂😂😂).
-// unica coisa liberada e risada de k (kkkk, k k k k, kk kk kk kk). Letra repetida
-// dentro de uma palavra (naaaao, simmmm) nao conta: o alvo e PALAVRA repetida.
-const REP_INTERNA_MAX = 3;
-const RE_RISADA_K = /^k+$/;
-// palavrinha de ligacao: so conta se dominar a mensagem (evita apagar frase
-// normal tipo "o gato e o rato e o pato e o cao" por causa do "e"/"o")
-const STOPWORDS_PT = new Set(['a', 'o', 'e', 'é', 'as', 'os', 'um', 'uma', 'de', 'da', 'do', 'das', 'dos', 'em', 'no', 'na', 'nos', 'nas', 'que', 'se', 'eu', 'tu', 'ele', 'ela', 'vc', 'você', 'voce', 'me', 'te', 'meu', 'minha', 'seu', 'sua', 'pra', 'para', 'por', 'com', 'sem', 'mas', 'ou', 'não', 'nao', 'sim', 'ta', 'tá', 'to', 'tô', 'ai', 'aí', 'la', 'lá', 'ja', 'já', 'so', 'só', 'mais', 'muito', 'the', 'and', 'to', 'of', 'in', 'is', 'it', 'i', 'you']);
-const RE_EMOJI_CUSTOM = /<a?:\w+:(\d+)>/g;
-const RE_EMOJI_UNI = /\p{Extended_Pictographic}(?:\uFE0F|\u20E3|\p{Emoji_Modifier}|\u200D\p{Extended_Pictographic})*/gu;
-// link de CDN do discord (imagem/arquivo colado como texto): morre sempre, mesmo se o
-// regex generico de link falhar por algum motivo
-const RE_CDN = /(?:cdn\.discordapp\.com|media\.discordapp\.net|images-ext-\d+\.discordapp\.net|attachments\/\d{17,20}\/\d{17,20}\/)/i;
-function temLinkCdn(m) {
-  const partes = [normLinkText(stripCodeBlocks(m.content || ''))];
-  for (const e of m.embeds || []) partes.push(e.url || '', (e.image && e.image.url) || '', (e.thumbnail && e.thumbnail.url) || '', (e.video && e.video.url) || '');
-  return RE_CDN.test(partes.join(' '));
-}
-// devolve o motivo (string) se a mensagem tem repeticao interna acima do limite; senao null
-function repeticaoInterna(content) {
-  const bruto = String(content || '');
-  if (!bruto) return null;
-  const contagem = new Map();
-  const conta = (t) => contagem.set(t, (contagem.get(t) || 0) + 1);
-  let total = 0;
-  // emoji custom (por id) e emoji unicode contam como token
-  let resto = bruto.replace(RE_EMOJI_CUSTOM, (_, id) => { conta('ce:' + id); total++; return ' '; });
-  resto = resto.replace(RE_EMOJI_UNI, (e) => { conta('e:' + e.replace(/\uFE0F/g, '')); total++; return ' '; });
-  // palavras: minusculo, sem acento, sem pontuacao, sem invisivel
-  const limpo = resto.normalize('NFKD').replace(/\p{M}/gu, '').replace(RE_INV, ' ').toLowerCase();
-  const palavras = limpo.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-  for (const p of palavras) {
-    if (RE_RISADA_K.test(p)) continue; // kkkkk liberado
-    // "naaaao" / "simmmm" / "aaaa": letra esticada nao e palavra repetida, mas
-    // colapsa pra comparar (oi oiii oi oi = mesma palavra)
-    const norm = p.replace(/(.)\1+/gu, '$1');
-    conta('w:' + norm);
-    total++;
-  }
-  let pior = null;
-  for (const [t, c] of contagem) {
-    if (c <= REP_INTERNA_MAX) continue;
-    const w = t.startsWith('w:') ? t.slice(2) : null;
-    // stopword / letra solta so conta se dominar a msg ("a a a a a" cai, "o gato e o rato e o pato" nao)
-    if (w && (STOPWORDS_PT.has(w) || w.length <= 1) && c < total * 0.5) continue;
-    if (!pior || c > pior.c) pior = { t, c };
-  }
-  if (pior) return `repeticao-interna:${pior.t.slice(0, 30)}x${pior.c}`;
-  // grudado: oioioioioi, hahahahaha, lolololol, 😂😂😂😂 sem espaco (unidade de 2+ chars
-  // repetida mais de 3 vezes). unidade de uma letra so (aaaaaa, kkkkkk) e liberada.
-  const gluer = limpo.replace(/\s+/g, '');
-  const re = /(\S{2,10}?)\1{3,}/gu;
-  let mm;
-  while ((mm = re.exec(gluer))) {
-    const u = mm[1];
-    if (/^(.)\1*$/u.test(u)) continue; // mesma letra esticada
-    if (RE_RISADA_K.test(u)) continue;
-    return `repeticao-grudada:${u.slice(0, 10)}`;
-  }
-  // emoji unicode colado tambem passa pelo regex acima? nao (foi trocado por espaco), entao
-  // a contagem por emoji la em cima ja cobre 😂😂😂😂.
-  return null;
-}
 const floodBuf = new Map();
 const penaltyUntil = new Map();
 
@@ -504,6 +439,11 @@ function estadoAntiflood() {
     rep: st.rep && typeof st.rep === 'object' ? st.rep : {},
     acoes: Array.isArray(st.acoes) ? st.acoes : [],
     stats: st.stats && typeof st.stats === 'object' ? st.stats : {},
+    // purga da lista do dono: quando varreu, a "impressao digital" da lista e
+    // onde cada canal parou (pra continuar de onde ficou no proximo boot)
+    palavrasVarreduraEm: Number(st.palavrasVarreduraEm) || 0,
+    palavrasHash: typeof st.palavrasHash === 'string' ? st.palavrasHash : '',
+    purga: st.purga && typeof st.purga === 'object' ? st.purga : {},
   };
   return antifloodMem;
 }
@@ -787,7 +727,7 @@ client.once('ready', async () => {
     if (confBoot) garantirOrdemInferno(gSnap, confBoot, { log }).catch(err);
   }
   // (auto-setup de blueprint removido — apenas comandos essenciais mantidos)
-  if (typeof varrerLinks === 'function') varrerLinks().catch(err); else err(new Error('varrerLinks ausente no ready'));
+  if (typeof varrerPalavras === 'function') varrerPalavras().catch(err); else err(new Error('varrerPalavras ausente no ready'));
   if (typeof varrerFlood === 'function') varrerFlood().catch(err); else err(new Error('varrerFlood ausente no ready'));
   (async () => {
     const stN = readJsonSafe(NUKE_STATE, {});
@@ -1326,6 +1266,7 @@ client.on('messageCreate', async (m) => {
         '**anti-flood**',
         `hoje: **${hoje.deteccoes}** detecções • **${hoje.apagadas}** mensagens apagadas • **${hoje.falhas}** falhas de exclusão`,
         `autores monitorados agora: **${Object.keys(stAF.rep).length}**`,
+        `-# purga da lista: ${stAF.palavrasVarreduraEm ? new Date(stAF.palavrasVarreduraEm).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : 'ainda nao rodou'}`,
         `permissões neste canal: ${falta.length ? '⚠️ faltando ' + falta.join(', ') : '✅ ok'}`,
         '',
         ultimas.length ? '**últimas ações:**' : '-# nenhuma ação registrada ainda',
@@ -1426,38 +1367,12 @@ client.on('messageCreate', async (m) => {
     const reasons = [];
     const now = Date.now();
 
-    // 1) limite de caracteres por mensagem (nao poluir tela de celular)
-    if (m.content.length > cfg.chars) reasons.push(`chars>${cfg.chars}`);
-
-    // 1.5) qualquer link / convite de server morre na hora
-    if (temLink(m.content)) reasons.push('link');
-    // 1.5b) link de cdn do discord (imagem colada como texto / embed): morre sempre
-    if (temLinkCdn(m)) reasons.push('link-cdn');
-
-    // 1.55) repeticao DENTRO da mensagem: mesma palavra/emoji mais de 3x
-    //       (nigga\nnigga\nnigga..., oi oi oi oi, oioioioi, 😂😂😂😂). k liberado.
-    {
-      const rep = repeticaoInterna(m.content);
-      if (rep) reasons.push(rep);
-    }
-
-    // 1.6) asterisco (markdown quebrado tipo **teste*): apaga na hora, sem mais nada
-    if ((m.content || '').includes('*')) reasons.push('asterisco');
-
-    // 1.6b) comeca com # (tenta virar texto grande/bold): apaga na hora, sem castigo
-    if (/^#/.test((m.content || '').trim())) reasons.push('header');
-
-    // 1.7) mensagem invisivel (so espacos/zero-width/tags unicode): apaga na hora
-    {
-      const bruto = m.content || '';
-      const visivel = bruto.replace(RE_INV, '');
-      if (bruto.length > 0 && visivel.length === 0) {
-        reasons.push('invisivel');
-      }
-    }
-
-    // 1.8) (removido) detecção "de várias contas": o dono não quer esse sistema.
-    // Cada conta cai sozinha nas regras individuais abaixo (2ª cópia apaga).
+    // 1) (removido em 02/10) filtros de conteudo em codigo: textao, link/convite,
+    //    link-cdn, repeticao interna, asterisco, header e invisivel. O dono pediu
+    //    para ficar SO com o bloqueio dele: "remova qualquer filtro atual que
+    //    fizemos, vou ficar so com o meu bloqueio". O que sobra abaixo e anti-flood
+    //    (comportamento: repetir, floodar, encher de emoji/msg curta), nao conteudo
+    //    — e mesmo ele so apaga, nunca pune.
 
     // 2) repeticao da MESMA mensagem pelo MESMO autor — a regra individual
     //    principal. O contador mora em antiflood_state.json (persiste):
@@ -1547,8 +1462,8 @@ client.on('messageCreate', async (m) => {
       }
     }
 
-    // 6) (removido) chuva de link com castigo: todo link ja morre na regra 1.5,
-    //    e o dono nao quer timeout nenhum.
+    // 6) (removido) chuva de link e o antigo castigo por link: o filtro de link
+    //    saiu a pedido do dono, e timeout nao existe mais.
 
     const recentes = registrarRecente(m, reasons, now, cfg.retroMs || RECENT_MSG_MS);
     if (reasons.length) {
@@ -1624,7 +1539,6 @@ async function avisarFalhaDelete(m, motivo, erro) {
 // varre os canais ao ligar: apaga sobra de flood/repetida/invisivel que passou durante o gap do restart
 async function varrerFlood() {
   const cfgV = readJsonSafe(ANTIFLOOD_CFG, ANTIFLOOD_DEFAULT);
-  const cfgChars = cfgV.chars || ANTIFLOOD_DEFAULT.chars;
   const cfgRetro = cfgV.retroMs || ANTIFLOOD_DEFAULT.retroMs;
   // contadores de repeticao velhos nao precisam sobreviver no estado
   try { podarLedger(estadoAntiflood().rep, Date.now(), cfgV); salvarAntiflood(); } catch (e) { err(e); }
@@ -1664,13 +1578,6 @@ async function varrerFlood() {
           for (let i = 5; i < curtas.length; i++) {
             if (curtas[i].createdTimestamp - curtas[i - 5].createdTimestamp < 60000) curtas.slice(i - 5, i + 1).forEach((x) => alvos.add(x));
           }
-          for (const x of arr) { const v = x.content || ''; if (v && !v.replace(RE_INV, '')) alvos.add(x); }
-          for (const x of arr) { if ((x.content || '').includes('*')) alvos.add(x); }
-          // mesmas regras instantaneas do messageCreate (pega o que passou enquanto o bot reiniciava)
-          for (const x of arr) {
-            const c = x.content || '';
-            if (c.length > cfgChars || repeticaoInterna(c) || temLinkCdn(x)) alvos.add(x);
-          }
         }
         for (const x of alvos) await x.delete().catch(() => {});
         if (alvos.size) log('VARREDURA_FLOOD', { canal: ch.id, apagadas: alvos.size });
@@ -1679,26 +1586,76 @@ async function varrerFlood() {
   }
 }
 
-// varre os canais ao ligar: apaga link que passou enquanto o bot reiniciava
-async function varrerLinks() {
+// ---------- purga da lista do dono ----------
+// "quero que apague todas que estejam salvas no sistema que eu coloquei" (02/10):
+// nao basta pegar o que chega depois do deploy — no boot o bot varre o historico
+// de cada canal e apaga tudo que casa com a lista do dono. Roda no maximo 1x a
+// cada PURGA_INTERVALO_MS, e na hora de novo se a lista mudou.
+const PURGA_PAGINAS = 50; // 50 x 100 msgs por canal a cada rodada
+const PURGA_INTERVALO_MS = 60 * 60 * 1000;
+async function varrerPalavras() {
+  const st = lerPalavrasBloqueadas();
+  if (!Object.keys(st.palavras || {}).length) return;
+  const stAF = estadoAntiflood();
+  const hash = Object.keys(st.palavras).sort().join('|');
+  const agora = Date.now();
+  if (stAF.palavrasHash === hash && agora - (stAF.palavrasVarreduraEm || 0) < PURGA_INTERVALO_MS) return;
+  if (stAF.palavrasHash !== hash) stAF.purga = {}; // lista mudou: recomeça do topo
+  stAF.palavrasHash = hash;
+  stAF.palavrasVarreduraEm = agora;
+  salvarAntiflood(true);
+  const antigo = stAF.purga && typeof stAF.purga === 'object' ? stAF.purga : {};
+  const purgaNova = {};
+  let total = 0, falhas = 0;
+  const porTermo = {};
   for (const gid of INFERNO_GUILDS) {
     const g = client.guilds.cache.get(gid);
     if (!g) continue;
     for (const ch of [...g.channels.cache.values()]) {
       if (!ch.isTextBased()) continue;
-      try {
-        const msgs = await ch.messages.fetch({ limit: 100 });
-        const alvos = msgs.filter((x) => (!x.author.bot || x.webhookId) && !isOwnWebhookId(x.webhookId) && x.author.id !== OWNER_ID && temLink(x.content || '') && x.deletable);
-        if (!alvos.size) continue;
-        await ch.bulkDelete(alvos, true).catch(async () => {
-          for (const x of [...alvos.values()]) await x.delete().catch(() => {});
-        });
-        log('VARREDURA', { canal: ch.id, apagadas: alvos.size });
-      } catch (e) { /* sem permissao no canal, segue */ }
+      if (antigo[ch.id] === 'fim') { purgaNova[ch.id] = 'fim'; continue; } // ja varreu o canal inteiro
+      let antes = antigo[ch.id] || null;
+      let acabou = false;
+      for (let pag = 0; pag < PURGA_PAGINAS; pag++) {
+        const lote = await ch.messages.fetch(antes ? { limit: 100, before: antes } : { limit: 100 }).catch(() => null);
+        if (!lote || !lote.size) { acabou = true; break; }
+        const alvos = new Map();
+        for (const x of lote.values()) {
+          if (!x.deletable || x.author.id === OWNER_ID) continue; // dono e imune
+          if (x.author.bot && !x.webhookId) continue;             // bots reais fora
+          if (isOwnWebhookId(x.webhookId)) continue;              // nossos paineis/logs
+          const hit = casarPalavras(x.content, st);
+          if (hit) { alvos.set(x.id, x); porTermo[hit.termo] = (porTermo[hit.termo] || 0) + 1; }
+        }
+        if (alvos.size) {
+          const apagadas = await ch.bulkDelete([...alvos.keys()], true).catch(() => null);
+          let n = apagadas ? apagadas.size : 0;
+          for (const x of alvos.values()) {
+            if (apagadas && apagadas.has(x.id)) continue; // ja foi no bulk
+            const ok = await x.delete().then(() => true).catch(() => false);
+            if (ok) n++; else falhas++;
+          }
+          total += n;
+          registrarAcaoAntiflood({ canal: ch.id, guild: g.id, motivo: 'purga-lista', apagou: n > 0, apagadas: n });
+        }
+        const maisAntiga = [...lote.values()].sort((a, b) => a.createdTimestamp - b.createdTimestamp)[0];
+        antes = maisAntiga.id;
+        if (lote.size < 100) { acabou = true; break; }
+      }
+      purgaNova[ch.id] = acabou ? 'fim' : antes; // guarda a posicao pra continuar no proximo boot
+      stAF.purga = purgaNova;
+      salvarAntiflood(true);
     }
   }
+  if (total || falhas) {
+    const termos = Object.entries(porTermo).map(([t, n]) => `${t} (${n})`).join(', ');
+    log('PURGA_PALAVRAS', { apagadas: total, falhas, termos: porTermo });
+    logEvento('🧹 Purga da lista de bloqueio', [
+      `**Mensagens antigas apagadas:** ${total}${falhas ? ` • **falhas:** ${falhas}` : ''}`,
+      termos ? `**Termos:** ${corta(termos, 300)}` : '',
+    ].filter(Boolean), 0x992d22);
+  }
 }
-
 
 client.on('interactionCreate', async (i) => {
   // botoes dos logs (so o dono)

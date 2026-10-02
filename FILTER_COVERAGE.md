@@ -6,6 +6,11 @@
 > lista usa o `normalizar` dele. O texto abaixo fica como referência do que as
 > regras cobriam, caso o dono queira religar (é só voltar a chamar o filtro no
 > `messageCreate`).
+>
+> Na mesma data também saíram os filtros de textão, link/convite, link de CDN,
+> repetição interna, asterisco, `#` e mensagem invisível. Sobrou só a lista do
+> dono (conteúdo) + o anti-flood (comportamento: repetir/floodar/emoji/msg curta),
+> e o anti-flood também só apaga — sem timeout nenhum.
 
 Este documento descreve o que o filtro textual do bot cobre e o que ele **não** cobre. O filtro é apenas textual, não analisa imagem/vídeo/áudio.
 

@@ -65,13 +65,26 @@ fugir do filtro:
 - Até 300 palavras, 60 caracteres cada
 - Fica em `blacklist_palavras.json`, sincronizado no repo
 
-## Outros filtros
+## Purga retroativa da lista
+
+Quando o bot liga, ele varre o histórico dos canais e apaga **o que já estava lá**
+e casa com a lista do dono (não só o que chega depois):
+
+- até 5.000 mensagens por canal a cada rodada; continua de onde parou na próxima
+- roda no máximo 1x por hora — e na hora, de novo, se a lista mudou
+- pula o dono, bots e as mensagens dos próprios painéis/logs do bot
+- o que foi apagado fica no `.antiflood` e no `antiflood_state.json`
+
+## Filtros de conteúdo — só o bloqueio do dono
 
 - O filtro automático de conteúdo (`scripts/filtro-denuncia.js`) **não está mais
-  ligado**: o dono removou em 02/10 e o único filtro de conteúdo é a lista dele
-  (`.bloquear`). O arquivo fica no repo e continua exportando o `normalizar`
-  usado pela lista.
-- Links/convites de servidor continuam sendo apagados (anti-spam do anti-flood).
+  ligado**: o dono removeu em 02/10. O arquivo fica no repo e continua exportando
+  o `normalizar` usado pela lista.
+- Também foram removidos, a pedido do dono: textão (>300), link/convite e link de
+  CDN, repetição interna na mensagem, asterisco, mensagem começando com `#` e
+  mensagem invisível — nada disso é mais filtrado por código.
+- O único filtro de conteúdo é a lista do `.bloquear`. O que sobra é **anti-flood**
+  (comportamento: repetir, floodar, encher de emoji/msg curta) e mesmo ele só apaga.
 
 ## Removidos
 
