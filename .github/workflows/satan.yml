@@ -10,6 +10,7 @@ on:
       - 'nuke_log.json'
       - 'logs_state.json'
       - 'blacklist_state.json'
+      - 'antiflood_state.json'
   # Renovacao periodica adicional. Cron pode atrasar; watchdog.yml verifica
   # falhas em outro runner, sem depender de uma etapa always() na maquina que caiu.
   schedule:

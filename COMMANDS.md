@@ -11,9 +11,23 @@ Só o dono (`OWNER_ID`) pode usar. Todos os outros comandos foram removidos.
 .bump                # painel de quem o lembrete marca
 .fig                 # fabrica de figurinhas
 .bloquear            # painel único em Components V2 para palavras bloqueadas
+.antiflood           # o que o anti-flood fez (detecções, apagadas, castigos, falhas)
 .logs on / off / teste   # liga/desliga/testa logs
 .menu                # mostra este menu resumido
 ```
+
+## Anti-flood individual (por pessoa)
+
+Quem repete a **mesma mensagem** leva, sozinho, sem precisar de mais ninguém:
+
+- **2ª cópia em até 5 min** → apaga essa e as anteriores (backlog do autor)
+- **3ª cópia em até 5 min** → castigo progressivo (1h, 2h, 3h...) + apaga tudo
+- rajada (6+ msgs em 6s) e chuva de emoji/link continuam como antes
+
+O contador fica em `antiflood_state.json` (versionado no repo), então religar o
+bot **não zera** mais a conta de quem estava floodando. Tudo que o anti-flood faz
+fica registrado ali — dá pra conferir pelo `.antiflood` ou olhando o arquivo no
+GitHub, mesmo com `.logs off`.
 
 ## .bloquear — painel único
 
