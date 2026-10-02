@@ -79,7 +79,8 @@ Quando o bot liga, ele varre o histórico dos canais e apaga **o que já estava 
 - até 5.000 mensagens por canal a cada rodada; continua de onde parou na próxima
 - roda no máximo 1x por hora — e na hora, de novo, se a lista mudar
 - pula o dono, bots e as mensagens dos próprios painéis/logs do bot
-- o que foi apagado fica no `.antiflood` e no `antiflood_state.json`
+- o que foi apagado fica no `.antiflood` (e no `antiflood_state.json`, com o
+  resumo da última faxina: canais varridos, páginas e mensagens apagadas)
 
 ## Filtros de conteúdo (ao vivo)
 
