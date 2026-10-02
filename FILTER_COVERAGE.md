@@ -87,8 +87,8 @@ pontuação/leet: `a.b.u.s.e.i`, `3stuprei` etc.
 
 ## Ação do bot
 
-- **Apenas** tenta apagar a mensagem e avisa o dono (canal de logs + DM). **Não aplica mute/timeout/ban por filtro**, inclusive `CP`/`CSAM`/`CSEM` e `violencia-sexual`. A imunidade do dono (`OWNER_ID`) continua igual.
-- Flood/spam continua com punições separadas (timeout progressivo de 1h +1h, `mute_state.json`), sem alteração aqui.
+- **Apenas** tenta apagar a mensagem e registra no canal de logs, quando ligado (**sem DM** e **sem aviso de falha**). Quem age ao vivo é a lista do dono (`.bloquear`); o filtro de denúncia roda só na faxina do histórico. **Não aplica mute/timeout/ban por filtro**, inclusive `CP`/`CSAM`/`CSEM` e `violencia-sexual`. A imunidade do dono (`OWNER_ID`) continua igual.
+- Flood/spam continua tratado em separado: o anti-flood (ver `COMMANDS.md`) **só apaga**, sem castigo/timeout. Falha de exclusão não gera aviso (fica no `antiflood_state.json`/`.antiflood`).
 - Categorias, permissões de canais e mensagem de boas-vindas não são alteradas por este filtro.
 
 ## Blacklist curada (`blacklist_termos.json`)
