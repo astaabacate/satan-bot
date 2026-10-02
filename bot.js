@@ -6,7 +6,6 @@ const { buildChannelSpec, missingPerms, PERMS_BOT_CANAL } = require('./scripts/c
 const { garantirOrdemInferno, irmaosOrdenados, posicaoDoConfessionario } = require('./scripts/channel-order.js');
 const { adicionarPalavras, removerPalavras, listarPalavras, casarPalavras, registrarUso, separarTermos } = require('./scripts/blacklist-palavras.js');
 const { snapshotGuild } = require('./scripts/server-snapshot.js');
-const { classificarDenuncia } = require('./scripts/filtro-denuncia.js');
 const { watchDiscord } = require('./scripts/discord-health.js');
 const { corridaComTimeout, ehErroDeAutenticacao, TIMEOUT_CODE, CODIGO_LOGIN_TRAVADO, CODIGO_TOKEN_INVALIDO } = require('./scripts/login-guard.js');
 const { registrarRepeticao, decidirRepeticao, podarLedger } = require('./scripts/antiflood-regras.js');
@@ -45,7 +44,6 @@ const ANTIFLOOD_DEFAULT = {
   repeatWindowMs: 300000,
   repMs: 300000,
   repApagar: 2,        // 2a copia -> apaga (inclusive as anteriores)
-  repCastigo: 3,       // 3a copia -> castigo progressivo (1h, 2h, ...)
   retroMs: 10 * 60 * 1000, // limpeza retroativa: ate 10 min de copias
   emojiWindowMs: 60000,
   emojiMax: 5,
@@ -117,23 +115,14 @@ function repeticaoInterna(content) {
 const floodBuf = new Map();
 const penaltyUntil = new Map();
 
-// castigo (timeout) progressivo: repetiu 10+ vezes -> 1h, e +1h a cada reincidencia
-const MUTE_STATE = path.join(ROOT, 'mute_state.json');
 const LOGS_STATE = path.join(ROOT, 'logs_state.json');
 const BLACKLIST_STATE = path.join(ROOT, 'blacklist_state.json');
 const PALAVRAS_STATE = path.join(ROOT, 'blacklist_palavras.json'); // palavras bloqueadas pelo dono (.bloquear)
-const MUTE_BASE_MS = 60 * 60 * 1000;
-const REP_MUTE_QTD = 10;
-const repStreak = new Map(); // userId -> { sig, count }
 const emoStreak = new Map();
 const emoBuf = new Map(); // userId -> timestamps de msgs so de emoji (chuva espacada/com texto no meio)
-const shortBuf = new Map(); // userId -> msgs curtas (spam W/Ww) // userId -> qtd seguida de msgs so de emoji
-const linkBuf = new Map();   // userId -> [timestamps de links]
-const crossSigBuf = new Map(); // guildId:assinatura -> [{ts,userId}] (raid com varias contas mandando igual)
+const shortBuf = new Map(); // userId -> msgs curtas (spam W/Ww)
 const recentMsgBuf = new Map(); // channelId -> msgs recentes p/ apagar retroativo (variações rápidas)
 const RECENT_MSG_MS = 2 * 60 * 1000;
-const CROSS_SIMILAR_MS = 60 * 1000;
-const CROSS_SIMILAR_MIN = 3;
 // Link/convite robusto: pega http(s), www e dominio com TLD realista,
 // alem de convites do Discord com espacos/zero-width/fullwidth no meio
 // (ex: discord . gg /abc, canary.discord.com/invite/abc, discord://-/invite/abc).
@@ -238,8 +227,11 @@ async function apagarRelacionadas(m, recentes, motivo) {
   let n = 0;
   for (const e of recentes) {
     if (e.id === m.id) continue;
+    // só o MESMO autor: o anti-flood é individual (o dono não quer regra que
+    // mexe na mensagem dos outros)
+    if (e.userId !== m.author.id) continue;
     if (!e.suspeita && !similarTexto(m.content || '', e.content || '')) continue;
-    if (!similarTexto(m.content || '', e.content || '') && !temLink(e.content || '')) continue;
+    if (!similarTexto(m.content || '', e.content || '')) continue;
     const ok = await m.channel.messages.delete(e.id).then(() => true).catch(() => false);
     if (ok) n++;
   }
@@ -1101,6 +1093,9 @@ function bloquearPanel() {
     '',
     preview,
     total > 15 ? `\n-# ...e mais ${total - 15}` : '',
+    '',
+    '-# casa por FORMAÇÃO: o termo é o COMEÇO da palavra e pega as evasões (estu → estupro, stupro, st, stu).',
+    '-# termo curto (cu, cp) só casa a palavra inteira. pra não pegar "estudo", bloqueie `estupr`.',
   ].filter(Boolean).join('\n');
 
   return {
@@ -1329,7 +1324,7 @@ client.on('messageCreate', async (m) => {
       const ultimas = stAF.acoes.slice(0, 8).map(linhaAcao);
       await whSend(m.channel, [
         '**anti-flood**',
-        `hoje: **${hoje.deteccoes}** detecções • **${hoje.apagadas}** mensagens apagadas • **${hoje.castigos}** castigos • **${hoje.falhas}** falhas de exclusão`,
+        `hoje: **${hoje.deteccoes}** detecções • **${hoje.apagadas}** mensagens apagadas • **${hoje.falhas}** falhas de exclusão`,
         `autores monitorados agora: **${Object.keys(stAF.rep).length}**`,
         `permissões neste canal: ${falta.length ? '⚠️ faltando ' + falta.join(', ') : '✅ ok'}`,
         '',
@@ -1403,48 +1398,27 @@ client.on('messageCreate', async (m) => {
     if (!m.guild) return;
     if (m.author.id === OWNER_ID) return; // o dono e imune: nada e apagado nele
 
-    // 0) PRIORIDADE MAXIMA: conteudo que faz o DISCORD derrubar o servidor.
-    //    Apaga na hora, antes que alguem tire print e denuncie (foi assim que
-    //    o servidor caiu: print de mensagem + denuncia = remocao definitiva
-    //    do servidor e ban do dono). Loga e avisa o dono sempre.
-    if (m.content) {
-      const den = classificarDenuncia(m.content);
-      if (den) {
-        await m.delete().catch(() => {});
-        log('DENUNCIA_APAGADA', { guild: m.guild.id, canal: m.channelId, user: m.author.id, cat: den.cat, termo: den.termo });
-        logEvento(den.grave ? '🚨 conteúdo GRAVE apagado' : '⚠️ conteúdo denunciável apagado', [
-          `**Categoria:** \`${den.cat}\``,
-          `**Conta:** <@${m.author.id}> (\`${m.author.id}\`)`,
-          `**Canal:** <#${m.channelId}>`,
-          `**Mensagem:** \`${m.id}\``,
-          `**Trecho:** ${corta(limparCodigo(m.content), 900)}`,
-          den.grave ? '-# isso derruba servidor e ban o dono. O ban é por sua conta.' : '',
-        ].filter(Boolean), den.cor);
-        avisarDono([
-          den.grave ? '🚨 **alerta grave** — isso derruba servidor:' : '⚠️ apaguei uma mensagem denunciável:',
-          `**Categoria:** \`${den.cat}\``,
-          `**Quem:** <@${m.author.id}> (\`${m.author.id}\`)`,
-          `**Trecho:** ${corta(limparCodigo(m.content), 300)}`,
-        ].join('\n')).catch(() => {});
-        return; // nao cai no anti-flood: ja foi tratado (sem mute/timeout/ban por filtro)
-      }
-    }
-    // 0.5) palavras que o DONO bloqueou (.bloquear): apaga e registra no canal
-    //      de logs. Sem castigo (nem mute, nem ban) — igual ao filtro de denuncia.
+    // 0) ÚNICO filtro de conteúdo: a lista DO DONO (.bloquear). A formação casa
+    //    o começo da palavra e as evasões (estu -> estupro/stupro/st), então não
+    //    precisa mais de lista fixa em código apagando o que ele não pediu.
+    //    Sem castigo: apaga e registra (o dono vê no .antiflood e nos logs).
     if (m.content) {
       const stPal = lerPalavrasBloqueadas();
       const hit = casarPalavras(m.content, stPal);
       if (hit) {
         registrarUso(stPal, hit.chave);
         salvarPalavras(stPal);
-        await m.delete().catch(() => {});
-        log('PALAVRA_BLOQUEADA', { guild: m.guild.id, canal: m.channelId, user: m.author.id, termo: hit.termo, usos: hit.entrada.usos });
+        const apagouPal = await m.delete().then(() => true).catch(() => false);
+        if (!apagouPal) avisarFalhaDelete(m, `bloqueio:${hit.termo}`, 'delete falhou').catch(err);
+        log('PALAVRA_BLOQUEADA', { guild: m.guild.id, canal: m.channelId, user: m.author.id, termo: hit.termo, usos: hit.entrada.usos, apagou: apagouPal });
+        registrarAcaoAntiflood({ canal: m.channelId, guild: m.guild.id, autor: m.author.id, motivo: `bloqueio:${hit.termo}`, apagou: apagouPal, apagadas: apagouPal ? 1 : 0, tipo: 'palavra' });
         logEvento('🚫 palavra bloqueada', [
           `**Palavra:** \`${hit.termo}\``,
           `**Conta:** <@${m.author.id}> (\`${m.author.id}\`)`,
           `**Canal:** <#${m.channelId}>`,
           `**Trecho:** ${corta(limparCodigo(m.content), 300)}`,
-        ], 0x992d22);
+          apagouPal ? '' : '⚠️ **não consegui apagar** (confira minhas permissões neste canal).',
+        ].filter(Boolean), 0x992d22);
         return;
       }
     }
@@ -1467,13 +1441,13 @@ client.on('messageCreate', async (m) => {
       if (rep) reasons.push(rep);
     }
 
-    // 1.6) asterisco (markdown quebrado tipo **teste*): apaga na hora, sem castigo
+    // 1.6) asterisco (markdown quebrado tipo **teste*): apaga na hora, sem mais nada
     if ((m.content || '').includes('*')) reasons.push('asterisco');
 
     // 1.6b) comeca com # (tenta virar texto grande/bold): apaga na hora, sem castigo
     if (/^#/.test((m.content || '').trim())) reasons.push('header');
 
-    // 1.7) mensagem invisivel (so espacos/zero-width/tags unicode): apaga na hora; grande = castigo
+    // 1.7) mensagem invisivel (so espacos/zero-width/tags unicode): apaga na hora
     {
       const bruto = m.content || '';
       const visivel = bruto.replace(RE_INV, '');
@@ -1482,36 +1456,13 @@ client.on('messageCreate', async (m) => {
       }
     }
 
-    // 1.8) repeticao distribuida: varias contas/webhook mandando o mesmo texto.
-    // cobre o caso que passa por baixo dos limites por-usuario
-    // (cada conta manda so 1 mensagem). Nao ativa modo global/canal.
-    {
-      const suspeitaBase = reasons.some((r) => /^(link|header|invisivel|asterisco|chars>|repeticao-)/.test(r));
-      const sig = msgSig(m);
-      if ((suspeitaBase || sig.length >= 80) && sig !== 'vazia') {
-        const k = `${m.guild.id}:${sig.slice(0, 220)}`;
-        const arr = (crossSigBuf.get(k) || []).filter((e) => now - e.ts < 60 * 1000);
-        arr.push({ ts: now, userId: m.author.id });
-        crossSigBuf.set(k, arr);
-        const usuarios = new Set(arr.map((e) => e.userId));
-        if (arr.length >= 3 && (usuarios.size >= 3 || m.webhookId)) reasons.push('raid-repetida');
-      }
-
-      // variação rápida: texto quase igual, mas com pontuação/espaço/invisível
-      // diferente. Quando bater, apaga também as cópias recentes parecidas.
-      if (suspeitaBase || (m.content || '').length >= 80) {
-        const recentes = (recentMsgBuf.get(m.channelId) || []).filter((e) => now - e.ts < CROSS_SIMILAR_MS && e.id !== m.id);
-        const parecidas = recentes.filter((e) => similarTexto(m.content || '', e.content || ''));
-        const usuarios = new Set(parecidas.map((e) => e.userId));
-        if (parecidas.length >= CROSS_SIMILAR_MIN - 1 && (usuarios.size >= 2 || m.webhookId)) reasons.push('raid-parecida');
-      }
-
-    }
+    // 1.8) (removido) detecção "de várias contas": o dono não quer esse sistema.
+    // Cada conta cai sozinha nas regras individuais abaixo (2ª cópia apaga).
 
     // 2) repeticao da MESMA mensagem pelo MESMO autor — a regra individual
     //    principal. O contador mora em antiflood_state.json (persiste):
-    //      2a copia na janela -> apaga (esta e as anteriores)
-    //      3a copia na janela -> castigo progressivo (1h, 2h, ...)
+    //      a partir da 2a copia na janela -> apaga essa, as anteriores e o
+    //      backlog do autor. SEM castigo (o dono nao quer timeout): so apagar.
     //    Janela de 5 min: pega o flood lento (1 copia a cada ~40s) que a janela
     //    antiga de 30s deixava passar — e que tambem se perdia a cada restart
     //    do bot, porque o contador era so memoria.
@@ -1526,14 +1477,9 @@ client.on('messageCreate', async (m) => {
       const stAF = estadoAntiflood();
       const rep = registrarRepeticao(stAF.rep, { userId: m.author.id, sig, agora: now, cfg: cfgRep });
       const decisao = decidirRepeticao(rep.qtd, cfg);
-      if (decisao === 'castigar') {
+      if (decisao) {
         repeticaoAgora = { ...rep, decisao };
         reasons.push(`repetiu-${rep.qtd}x`);
-        await aplicarCastigo(m, `repetir a mesma mensagem ${rep.qtd}x em ${Math.round(rep.janelaMs / 60000)} min`);
-        delete stAF.rep[m.author.id]; // zera a conta: o castigo ja foi (se ele voltar, comeca denovo)
-      } else if (decisao === 'apagar') {
-        repeticaoAgora = { ...rep, decisao };
-        reasons.push('repetida');
       }
       podarLedger(stAF.rep, now, cfg);
       salvarAntiflood();
@@ -1561,21 +1507,12 @@ client.on('messageCreate', async (m) => {
       }
     }
 
-    // 5) repetiu a MESMA mensagem mais de 10 vezes -> castigo progressivo + apaga
-    {
-      const sig = msgSig(m);
-      const s = repStreak.get(m.author.id);
-      const streak = s && s.sig === sig ? { sig, count: s.count + 1 } : { sig, count: 1 };
-      repStreak.set(m.author.id, streak);
-      if (streak.count > REP_MUTE_QTD) {
-        await aplicarCastigo(m, 'repetir a mesma mensagem 10+ vezes');
-        reasons.push('rep-muitas'); // antes o castigo nao apagava nada: spam ficava de pe
-      }
-    }
+    // 5) (removido) castigo por 10+ repeticoes: a regra 2 ja apaga desde a 2a
+    //    copia e o dono nao quer castigo nenhum — só apagar.
 
-    // 5b) 5+ mensagens so de emoji -> castigo progressivo + apaga.
-    //     conta seguidas (comportamento antigo) E por janela de tempo: texto
-    //     no meio nao zera mais a chuva (5 emojis em 60s cai mesmo com "oi" entre eles)
+    // 5b) 5+ mensagens so de emoji -> apaga (sem castigo). Conta seguidas E por
+    //     janela: texto no meio nao zera mais a chuva (5 emojis em 60s cai
+    //     mesmo com "oi" entre eles)
     {
       const txt = (m.content || '').trim();
       const soEmoji = txt.length > 0 && /^[\p{Extended_Pictographic}\p{Emoji_Component}\u200d\ufe0f\s]+$/u.test(txt);
@@ -1585,10 +1522,7 @@ client.on('messageCreate', async (m) => {
         const arr = (emoBuf.get(m.author.id) || []).filter((t) => now - t < cfg.emojiWindowMs);
         arr.push(now);
         emoBuf.set(m.author.id, arr);
-        if (q >= 5 || arr.length >= (cfg.emojiMax || 5)) {
-          await aplicarCastigo(m, 'chuva de emojis');
-          reasons.push('chuva-emojis'); // antes o castigo nao apagava nada: spam ficava de pe
-        }
+        if (q >= 5 || arr.length >= (cfg.emojiMax || 5)) reasons.push('chuva-emojis');
       } else {
         emoStreak.delete(m.author.id);
       }
@@ -1613,16 +1547,8 @@ client.on('messageCreate', async (m) => {
       }
     }
 
-    // 6) chuva de link: 10+ links em 10 minutos -> castigo progressivo + apaga
-    if (temLink(m.content || '')) {
-      const arr = (linkBuf.get(m.author.id) || []).filter((t) => now - t < 10 * 60 * 1000);
-      arr.push(now);
-      linkBuf.set(m.author.id, arr);
-      if (arr.length > REP_MUTE_QTD) {
-        await aplicarCastigo(m, 'mandar link 10+ vezes');
-        reasons.push('link-muitos'); // antes o castigo nao apagava nada: spam ficava de pe
-      }
-    }
+    // 6) (removido) chuva de link com castigo: todo link ja morre na regra 1.5,
+    //    e o dono nao quer timeout nenhum.
 
     const recentes = registrarRecente(m, reasons, now, cfg.retroMs || RECENT_MSG_MS);
     if (reasons.length) {
@@ -1691,72 +1617,9 @@ async function avisarFalhaDelete(m, motivo, erro) {
   await avisarDono(`⚠️ Não consegui apagar spam em <#${m.channelId}> (motivo: ${motivo}). ${semPerm ? 'Falta permissão de Gerenciar Mensagens neste canal.' : 'Erro: ' + (erro || '?')}`);
 }
 
-// ---------- essas 4 viviam presas DENTRO do messageCreate: por isso o ready nao achava varrerLinks ----------
-async function aplicarCastigo(m, motivo) {
-  return castigar(m.guild, m.author.id, motivo, { member: m.member, canal: m.channel });
-}
-
-// castigo progressivo do anti-flood: 1h, 2h, 3h...
-// IMPORTANTE: so grava o nivel em mute_state.json (e so anuncia "castigo
-// aplicado") se o timeout REALMENTE entrou. Antes, membro nao encontrado
-// (autor de webhook, fetch falhando) gravava "level 1" sem timeout nenhum: o
-// estado dizia que a pessoa foi castigada e no servidor ela continuava falando.
-async function castigar(guild, userId, motivo, opts = {}) {
-  const st = readJsonSafe(MUTE_STATE, {});
-  const rec = st[userId] || { level: 0, until: 0 };
-  if (Date.now() < rec.until) return null; // ja esta de castigo agora
-  const horas = rec.level + 1;
-  const membro = opts.member || (guild ? await guild.members.fetch(userId).catch(() => null) : null);
-  const canal = opts.canal || null;
-  const aviso = `Você tomou castigo de ${horas} hora${horas > 1 ? 's' : ''}. Caso continue floodando, o tempo aumentará pra ${horas + 1} horas e assim consecutivamente.`;
-  try {
-    if (!membro) throw new Error('membro não encontrado no servidor (autor de webhook?)');
-    await membro.timeout(horas * MUTE_BASE_MS, 'flood: ' + motivo);
-  } catch (e) {
-    err(e);
-    log('CASTIGO_FAIL', { author: userId, horas, motivo, err: e && e.message });
-    registrarAcaoAntiflood({ canal: canal && canal.id, guild: guild && guild.id, autor: userId, motivo, castigo: 0, erro: corta(String(e && e.message), 120) });
-    logEvento('⚠️ Castigo não aplicado', [
-      `**Conta:** <@${userId}>`,
-      `**Motivo:** \`${motivo}\``,
-      `**Erro:** ${e && e.message}`,
-      'Preciso de **Moderar membros** acima do cargo da pessoa.',
-    ], 0xff4444);
-    await avisarDono(`⚠️ Não consegui aplicar castigo (${horas}h) em <@${userId}> por "${motivo}".\nMotivo: ${e && e.message}\nConfira minha permissão **Moderar membros** e a hierarquia de cargos.`).catch(() => {});
-    return null;
-  }
-  // timeout entrou: agora sim persiste o nivel e anuncia
-  rec.level = horas;
-  rec.until = Date.now() + horas * MUTE_BASE_MS;
-  st[userId] = rec;
-  fs.writeFileSync(MUTE_STATE, JSON.stringify(st, null, 2));
-  repStreak.delete(userId);
-  linkBuf.delete(userId);
-  log('CASTIGO', { author: userId, horas, motivo });
-  registrarAcaoAntiflood({ canal: canal && canal.id, guild: guild && guild.id, autor: userId, motivo, castigo: horas });
-  logEvento('⏱️ Castigo anti-flood', [
-    `**Conta:** <@${userId}>`,
-    `**Tempo:** ${horas} hora${horas > 1 ? 's' : ''}`,
-    `**Motivo:** \`${motivo}\``,
-  ], 0xc0392b);
-  // aviso curto no canal: o dono (e o floodador) precisam VER que o bot agiu.
-  // Some sozinho em 12s pra nao sujar o chat.
-  if (canal) {
-    const tmp = await whSend(canal, `⏱️ <@${userId}> levou castigo de ${horas}h — flood detectado aqui e as mensagens repetidas foram apagadas.`).catch(() => null);
-    if (tmp) setTimeout(() => tmp.delete().catch(() => {}), 12000);
-  }
-  // aviso so pra pessoa: o Discord nao deixa mensagem invisivel solta, entao vai por DM (privada)
-  const alvo = membro || await client.users.fetch(userId).catch(() => null);
-  const dmOk = alvo ? await alvo.send(aviso).then(() => true).catch(() => false) : false;
-  if (!dmOk) {
-    const ch = opts.canal || (opts.channelId && guild ? await guild.channels.fetch(opts.channelId).catch(() => null) : null);
-    if (ch) {
-      const tmp = await whSend(ch, `<@${userId}> ${aviso}`).catch(() => null);
-      if (tmp) setTimeout(() => tmp.delete().catch(() => {}), 15000);
-    }
-  }
-  return { horas, aviso };
-}
+// ---------- anti-flood: só apagar ----------
+// (castigo/timeout removido a pedido do dono, 02/10: "n preciso do castigo
+//  de jeito nenhum, só apagar mesmo". Nada aqui aplica timeout.)
 
 // varre os canais ao ligar: apaga sobra de flood/repetida/invisivel que passou durante o gap do restart
 async function varrerFlood() {
@@ -2098,7 +1961,9 @@ client.on('interactionCreate', async (i) => {
       const st = lerPalavrasBloqueadas();
       const hit = casarPalavras(frase, st);
       await i.reply({
-        content: hit ? `🚫 cai na palavra bloqueada \`${hit.termo}\`.` : '✅ não cai em nenhuma palavra bloqueada.',
+        content: hit
+          ? `🚫 cai na palavra bloqueada \`${hit.termo}\` (casamento por formação).`
+          : '✅ não cai em nenhuma palavra bloqueada.',
         ephemeral: true
       }).catch(() => {});
       return;

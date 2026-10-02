@@ -99,13 +99,51 @@ test('casarPalavras: frase inteira tambem pode ser bloqueada', () => {
   assert.equal(casarPalavras('vai ser fuder', st), null); // palavra do meio diferente
 });
 
+test('casarPalavras: formacao pega as variacoes que o povo usa pra fugir', () => {
+  // o caso do dono: bloqueia "estu" e cai estupro/estuprar/stupro/st/stu
+  const st = comTermos('estu');
+  for (const txt of ['vou te estuprar', 'estupro', 'estuprando ela', 'stupro', 'st', 'stu', 'estuuupro']) {
+    assert.ok(casarPalavras(txt, st), `era pra casar: ${txt}`);
+  }
+  assert.equal(casarPalavras('st', st).termo, 'estu'); // abreviacao
+});
+
+test('casarPalavras: "est" pega stupro, mas NAO pega "tu" nem "teste"', () => {
+  const st = comTermos('est');
+  assert.equal(casarPalavras('stupro', st).termo, 'est');
+  assert.equal(casarPalavras('estupro', st).termo, 'est');
+  assert.equal(casarPalavras('st', st).termo, 'est');
+  assert.equal(casarPalavras('tu', st), null);
+  assert.equal(casarPalavras('teste', st), null);
+  assert.equal(casarPalavras('qual foi, tu vai?', st), null);
+});
+
+test('casarPalavras: termo mais longo deixa a conversa normal em paz', () => {
+  const st = comTermos('estupr');
+  assert.equal(casarPalavras('stupro', st).termo, 'estupr');
+  assert.equal(casarPalavras('estupro', st).termo, 'estupr');
+  assert.equal(casarPalavras('vou estudar', st), null); // "estudo" nao cai
+  assert.equal(casarPalavras('estudei muito', st), null);
+});
+
+test('casarPalavras: radical cobre as conjugacoes (molest*)', () => {
+  const st = comTermos('molest');
+  for (const txt of ['molestar', 'molestei', 'molestando', 'molestaram', 'molestaria']) {
+    assert.equal(casarPalavras(txt, st).termo, 'molest', `era pra casar: ${txt}`);
+  }
+  assert.equal(casarPalavras('pedido', comTermos('pedo')), null); // pedofilo cai, pedido nao
+  assert.equal(casarPalavras('pedofilo', comTermos('pedo')).termo, 'pedo');
+});
+
 test('casarPalavras: palavra inteira — nao derruba quem so tem o termo no meio', () => {
   const st = comTermos('cu');
   assert.equal(casarPalavras('ele é inculo', st), null); // "inculo" contem "cu"
   assert.equal(casarPalavras('diz cu', st).termo, 'cu');
   assert.equal(casarPalavras('tomar c.u', st).termo, 'cu'); // evasao: casa
+  assert.equal(casarPalavras('cuidado com o buraco', st), null); // "cuidado" nao e "cu"
+  // termo curto casa palavra inteira; termo maior casa a formacao (putaria -> puta)
   const st2 = comTermos('puta');
-  assert.equal(casarPalavras('putaria', st2), null); // sufixo: precisa bloquear a variante
+  assert.equal(casarPalavras('putaria', st2).termo, 'puta');
   assert.equal(casarPalavras('aquela puta', st2).termo, 'puta');
 });
 

@@ -1,5 +1,12 @@
 # FILTER_COVERAGE — cobertura e limitações do filtro de conteúdo
 
+> **DESLIGADO em 02/10/2026 a pedido do dono.** O `classificarDenuncia` não é mais
+> chamado pelo `bot.js`: o único filtro de conteúdo é a lista do dono (`.bloquear`,
+> casamento por formação — ver `COMMANDS.md`). O módulo continua no repo porque a
+> lista usa o `normalizar` dele. O texto abaixo fica como referência do que as
+> regras cobriam, caso o dono queira religar (é só voltar a chamar o filtro no
+> `messageCreate`).
+
 Este documento descreve o que o filtro textual do bot cobre e o que ele **não** cobre. O filtro é apenas textual, não analisa imagem/vídeo/áudio.
 
 ## Objetivo

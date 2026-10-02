@@ -1,17 +1,32 @@
-// Palavras bloqueadas pelo dono (.bloquear / .desbloquear / .bloqueios).
+// Palavras bloqueadas pelo dono (.bloquear).
 //
-// É a lista DO DONO, mexida em runtime — diferente das REGRAS do
-// scripts/filtro-denuncia.js, que são código (conteúdo que derruba o servidor e
-// que ninguém deve desligar por engano). Aqui ele bloqueia e desbloqueia o que
-// quiser na hora, sem redeploy.
+// É a lista DO DONO, mexida em runtime — o ÚNICO filtro de conteúdo: quem manda
+// no que é apagado é ele, não uma lista fixa em código.
 //
 // O estado vive em blacklist_palavras.json e TEM que estar no GH_STATE_FILES:
 // o runner do Actions é descartável, e sem isso a lista sumiria a cada restart.
 //
-// Casamento: o texto e o termo passam pela mesma normalização do filtro (sem
-// acento, sem invisível, leet -> letra), então "cu", "CÚ" e "c.u" dão na mesma.
-// A palavra precisa estar INTEIRA: bloquear "cu" não derruba "inculo", mas pega
-// "cuuu" e "c.u".
+// Casamento por FORMAÇÃO (não por letra): o termo vira o começo da palavra e
+// pega as variações que o povo escreve pra fugir do filtro. Exemplos:
+//
+//   bloquear "estu"   -> estupro, estuprar, estuprando, stupro, st, stu
+//   bloquear "est"    -> estupro, stupro, st   (e "teste"/"tu" NÃO caem)
+//   bloquear "estupr" -> estupro, stupro (e "estudo" NÃO cai)
+//   bloquear "molest" -> molestar, molestei, molestando, molestaram
+//   bloquear "pedo"   -> pedofilo, pedofilia (e "pedido" NÃO cai)
+//
+// Regras do casamento (tudo normalizado: sem acento, sem invisível, leet->letra):
+//  - o termo casa no COMEÇO da palavra (formação), com a pontuação/efeito de
+//    teclado no meio ("s.t.u") e letra esticada no fim ("estuuupro");
+//  - versões sem a vogal inicial também casam ("estu" pega "stupro", "st");
+//  - abreviações da forma sem vogal ("st", "stu") casam como palavra inteira;
+//  - termo de 2 letras digitado curto (cu, cp) só casa palavra INTEIRA, senão
+//    "cuidado"/"cpus" cairiam junto;
+//  - frase (com espaço, ex.: "vai se fuder") casa a frase toda, como antes.
+//
+// ATENÇÃO: formação é literal — bloquear "estu" apaga também estudo/estudante/
+// estúpido (tudo que começa com essas letras). Pra pegar só o crime, bloqueie
+// "estupr": pega estupro/stupro e deixa "estudo" em paz.
 
 const { normalizar } = require('./filtro-denuncia.js');
 
@@ -74,20 +89,63 @@ function listarPalavras(st) {
 
 function escapeRegex(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-// regex do termo: cada letra pode estar separada por pontuacao/espaco (furar
-// "c.u" e "b o s t a"), a ultima pode estar esticada ("cuuu", "bostaaa") e a
-// palavra precisa ser INTEIRA — senao "inculo" cairia no bloqueio de "cu" e
-// "putaria" no de "puta".
+// Formações do termo: ele mesmo + as versões sem a vogal inicial.
+// "estu" -> ["estu","stu"]   (estupro/stupro/st)
+// A vogal inicial é exatamente o pedaço que o povo come pra fugir do filtro
+// (estupro -> stupro -> st), então cada versão vira um começo de palavra válido.
+function formacoes(k) {
+  const letras = String(k).replace(/[^a-z]/g, '');
+  const out = [];
+  const add = (s) => { if (s && s.length >= 2 && !out.includes(s)) out.push(s); };
+  add(letras);
+  let s = letras;
+  while (s.length > 2 && /^[aeiou]/.test(s)) { s = s.slice(1); add(s); }
+  return out;
+}
+
+// uma alternativa do regex: as letras do termo, aceitando pontuação/espaço no
+// meio (c.u, b o s t a) e letra esticada no fim (cuuu). prefixo=true deixa a
+// palavra continuar (formação: estu -> estupro); false exige palavra inteira.
+function alternativa(letras, prefixo) {
+  const partes = String(letras).split('');
+  if (!partes.length) return null;
+  const fim = escapeRegex(partes.pop());
+  const corpo = partes.map((c) => escapeRegex(c) + '[^a-z]*').join('');
+  return '(?<![a-z])' + corpo + fim + '{1,4}' + (prefixo ? '[a-z]*' : '(?![a-z])');
+}
+
+// regex do termo bloqueado (por formação). null = termo sem letra útil.
 const cacheRegex = new Map();
 function regexDoTermo(k) {
   if (cacheRegex.has(k)) return cacheRegex.get(k);
   let rx = null;
-  const letras = k.replace(/[^a-z]/g, '');
-  if (letras) {
-    const partes = letras.split('');
-    const fim = escapeRegex(partes.pop());
-    const corpo = partes.map((c) => escapeRegex(c) + '[^a-z]*').join('');
-    rx = new RegExp('(?<![a-z])' + corpo + fim + '{1,4}(?![a-z])');
+  const base = String(k).replace(/[^a-z]/g, '');
+  if (base) {
+    const alts = [];
+    if (/\s/.test(k)) {
+      // frase inteira (ex.: "vai se fuder"): casa a frase toda, como antes
+      const a = alternativa(base, false);
+      if (a) alts.push(a);
+    } else {
+      const formas = formacoes(k);
+      formas.forEach((f, i) => {
+        // termo de 2 letras digitado assim mesmo (cu, cp): palavra INTEIRA,
+        // senão "cuidado"/"cpus" cairiam junto. A versão sem vogal ("st" de
+        // "estu") veio de um termo maior, então essa continua valendo como
+        // começo de palavra (stupro).
+        const a = alternativa(f, !(i === 0 && f.length <= 2));
+        if (a) alts.push(a);
+      });
+      // abreviação da forma sem vogal inicial: "st"/"stu" (de estupro)
+      const elidida = formas[1];
+      if (elidida && elidida.length >= 3) {
+        for (let n = 2; n < elidida.length; n++) {
+          const a = alternativa(elidida.slice(0, n), false);
+          if (a) alts.push(a);
+        }
+      }
+    }
+    if (alts.length) rx = new RegExp('(?:' + alts.join('|') + ')');
   }
   cacheRegex.set(k, rx);
   return rx;

@@ -7,19 +7,18 @@
 // O que existia antes:
 //   - 2a copia dentro de 30s  -> apagava (janela CURTA demais: 1 msg a cada
 //     35s passava batido, e o print mostrou 8 msgs no mesmo MINUTO)
-//   - 11a copia seguida       -> castigo (lento demais; a pessoa so era
-//     punida depois de encher a tela)
+//   - 11a copia seguida       -> (o castigo que existia aqui foi removido: o
+//     dono quer só apagar)
 //   - os contadores viviam na memoria -> todo restart do bot (e ele reinicia
 //     muito) zerava a conta no meio do flood
 //
-// Agora: contador persistente (antiflood_state.json), janela de 5 min e escada
-// curta -> 2a copia apaga, 3a copia castiga. Uma pessoa so, sem precisar de
-// regra nenhuma "de varias contas juntas".
+// Agora: contador persistente (antiflood_state.json), janela de 5 min e regra
+// curta -> da 2a copia em diante apaga (e o backlog do autor). So apagar: sem
+// castigo/timeout. Uma pessoa so, sem regra nenhuma "de varias contas juntas".
 
 const DEFAULT = {
   repMs: 5 * 60 * 1000, // janela em que copias da MESMA mensagem contam
   repApagar: 2,         // 2a copia na janela -> apaga (inclusive as anteriores)
-  repCastigo: 3,        // 3a copia na janela -> castigo progressivo
   maxChavesPorAutor: 12, // poda: quantas mensagens diferentes rastreamos por autor
 };
 
@@ -30,12 +29,9 @@ function inteiroPositivo(v, padrao) {
 
 // cfg vem do antispam_config.json (ou do ANTIFLOOD_DEFAULT do bot.js)
 function normalizarRep(cfg = {}) {
-  const apagar = Math.max(2, inteiroPositivo(cfg.repApagar, DEFAULT.repApagar));
-  const castigo = Math.max(apagar, inteiroPositivo(cfg.repCastigo, DEFAULT.repCastigo));
   return {
     repMs: inteiroPositivo(cfg.repMs, DEFAULT.repMs),
-    repApagar: apagar,
-    repCastigo: castigo,
+    repApagar: Math.max(2, inteiroPositivo(cfg.repApagar, DEFAULT.repApagar)),
     maxChavesPorAutor: inteiroPositivo(cfg.maxChavesPorAutor, DEFAULT.maxChavesPorAutor),
   };
 }
@@ -65,10 +61,10 @@ function registrarRepeticao(ledger, { userId, sig, agora = Date.now(), cfg } = {
   return { qtd: item.t.length, chave, janelaMs: c.repMs, primeira: item.t[0] };
 }
 
-// o que fazer com a contagem: null | 'apagar' | 'castigar'
+// o que fazer com a contagem: null | 'apagar'
+// (castigo/timeout removido a pedido do dono: aqui é só apagar)
 function decidirRepeticao(qtd, cfg) {
   const c = normalizarRep(cfg);
-  if (qtd >= c.repCastigo) return 'castigar';
   if (qtd >= c.repApagar) return 'apagar';
   return null;
 }

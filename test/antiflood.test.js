@@ -10,15 +10,14 @@ const {
 // e o castigo na 11a copia, isso passava batido ("o bot nao faz nada").
 const FRASE = 'eai boy prazer 17 anos alto cabelo cacheado';
 
-test('padroes: 2a copia apaga, 3a castiga, janela de 5 min', () => {
+test('padroes: da 2a copia em diante so apaga (sem castigo), janela de 5 min', () => {
   const c = normalizarRep({});
   assert.equal(c.repApagar, 2);
-  assert.equal(c.repCastigo, 3);
   assert.equal(c.repMs, DEFAULT.repMs);
   assert.equal(decidirRepeticao(1, {}), null);
   assert.equal(decidirRepeticao(2, {}), 'apagar');
-  assert.equal(decidirRepeticao(3, {}), 'castigar');
-  assert.equal(decidirRepeticao(9, {}), 'castigar');
+  assert.equal(decidirRepeticao(3, {}), 'apagar');
+  assert.equal(decidirRepeticao(9, {}), 'apagar');
 });
 
 test('a MESMA frase repetida em ~40s cai na escada (antes passava)', () => {
@@ -33,10 +32,10 @@ test('a MESMA frase repetida em ~40s cai na escada (antes passava)', () => {
   r = registrarRepeticao(ledger, { userId: autor, sig: FRASE, agora: t0 + 40_000 });
   assert.equal(r.qtd, 2);
   assert.equal(decidirRepeticao(r.qtd, {}), 'apagar');
-  // 3a copia 40s depois -> castigo
+  // 3a copia 40s depois -> continua so apagando
   r = registrarRepeticao(ledger, { userId: autor, sig: FRASE, agora: t0 + 80_000 });
   assert.equal(r.qtd, 3);
-  assert.equal(decidirRepeticao(r.qtd, {}), 'castigar');
+  assert.equal(decidirRepeticao(r.qtd, {}), 'apagar');
 });
 
 test('ponta de frase diferente NAO conta como copia', () => {
@@ -112,5 +111,5 @@ test('estado persistido (JSON) continua valendo depois de recarregar', () => {
   const recarregado = JSON.parse(JSON.stringify(ledger));
   const r = registrarRepeticao(recarregado, { userId: '1', sig: FRASE, agora: t0 + 120_000 });
   assert.equal(r.qtd, 3);
-  assert.equal(decidirRepeticao(r.qtd, {}), 'castigar');
+  assert.equal(decidirRepeticao(r.qtd, {}), 'apagar');
 });
