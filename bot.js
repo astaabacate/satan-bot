@@ -1802,10 +1802,11 @@ async function varrerPalavras() {
   const purgaNova = {};
   let total = 0, falhas = 0, canais = 0, paginas = 0;
   const porTermo = {};
+  const semLeitura = []; // canais que o bot nao conseguiu ler (permissao/fetch)
   const salvarResumo = () => {
     const vivo = estadoAntiflood();
     vivo.purga = purgaNova;
-    vivo.faxina = { em: new Date().toISOString(), canais, paginas, apagadas: total, falhas, motivos: porTermo, iniciadaEm: new Date(agora).toISOString() };
+    vivo.faxina = { em: new Date().toISOString(), canais, paginas, apagadas: total, falhas, motivos: porTermo, semLeitura, iniciadaEm: new Date(agora).toISOString() };
     salvarAntiflood(true);
   };
   for (const gid of INFERNO_GUILDS) {
@@ -1817,7 +1818,9 @@ async function varrerPalavras() {
       let antes = antigo[ch.id] || null;
       let acabou = false;
       for (let pag = 0; pag < PURGA_PAGINAS; pag++) {
-        const lote = await ch.messages.fetch(antes ? { limit: 100, before: antes } : { limit: 100 }).catch(() => null);
+        let deuErro = false;
+        const lote = await ch.messages.fetch(antes ? { limit: 100, before: antes } : { limit: 100 }).catch(() => { deuErro = true; return null; });
+        if (deuErro && !antes) { semLeitura.push(`#${ch.name}`); acabou = true; break; } // nao consegui ler: registra pra o dono arrumar
         if (!lote || !lote.size) { acabou = true; break; }
         paginas += 1;
         const alvos = new Map();
@@ -1859,7 +1862,13 @@ async function varrerPalavras() {
     }
   }
   salvarResumo();
-  log('PURGA_PALAVRAS', { apagadas: total, falhas, canais, paginas, motivos: porTermo });
+  log('PURGA_PALAVRAS', { apagadas: total, falhas, canais, paginas, semLeitura, motivos: porTermo });
+  if (semLeitura.length) {
+    logEvento('⚠️ Faxina não conseguiu ler alguns canais', [
+      `**Canais:** ${semLeitura.slice(0, 20).join(', ')}`,
+      'Falta permissão de **Ver Canal / Ler Histórico** pra mim nesses canais — as mensagens antigas deles não foram varridas.',
+    ], 0xff4444);
+  }
   if (total || falhas) {
     const termos = Object.entries(porTermo).map(([t, n]) => `${t} (${n})`).join(', ');
     logEvento('🧹 Faxina do histórico (bloqueio + filtros antigos)', [
