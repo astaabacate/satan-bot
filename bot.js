@@ -794,6 +794,7 @@ client.once('ready', async () => {
     if (confBoot) garantirOrdemInferno(gSnap, confBoot, { log }).catch(err);
   }
   // (auto-setup de blueprint removido — apenas comandos essenciais mantidos)
+  if (typeof varrerLinks === 'function') varrerLinks().catch(err); else err(new Error('varrerLinks ausente no ready'));
   if (typeof varrerPalavras === 'function') varrerPalavras().catch(err); else err(new Error('varrerPalavras ausente no ready'));
   if (typeof varrerFlood === 'function') varrerFlood().catch(err); else err(new Error('varrerFlood ausente no ready'));
   (async () => {
@@ -1406,10 +1407,42 @@ client.on('messageCreate', async (m) => {
     if (!m.guild) return;
     if (m.author.id === OWNER_ID) return; // o dono e imune: nada e apagado nele
 
-    // 0) ÚNICO filtro de conteúdo: a lista DO DONO (.bloquear). A formação casa
-    //    o começo da palavra e as evasões (estu -> estupro/stupro/st), então não
-    //    precisa mais de lista fixa em código apagando o que ele não pediu.
-    //    Sem castigo: apaga e registra (o dono vê no .antiflood e nos logs).
+    // 0) PRIORIDADE MAXIMA: conteudo que faz o DISCORD derrubar o servidor
+    //    (filtro de denuncia). Apaga na hora, antes que alguem tire print e
+    //    denuncie; loga e avisa o dono sempre. Sem mute/timeout/ban por filtro.
+    if (m.content) {
+      const den = classificarDenuncia(m.content);
+      if (den) {
+        let apagouDen = await m.delete().then(() => true).catch(() => false);
+        if (!apagouDen) {
+          const curouDen = await garantirPermModeracao(m.guild, m.channel).catch(() => false);
+          if (curouDen) apagouDen = await m.delete().then(() => true).catch(() => false);
+          if (!apagouDen) avisarFalhaDelete(m, `denuncia:${den.cat}`, 'delete falhou').catch(err);
+        }
+        log('DENUNCIA_APAGADA', { guild: m.guild.id, canal: m.channelId, user: m.author.id, cat: den.cat, termo: den.termo, apagou: apagouDen });
+        registrarAcaoAntiflood({ canal: m.channelId, guild: m.guild.id, autor: m.author.id, motivo: `denuncia:${den.cat}`, apagou: apagouDen, apagadas: apagouDen ? 1 : 0, tipo: 'denuncia' });
+        logEvento(den.grave ? '🚨 conteúdo GRAVE apagado' : '⚠️ conteúdo denunciável apagado', [
+          `**Categoria:** \`${den.cat}\``,
+          `**Conta:** <@${m.author.id}> (\`${m.author.id}\`)`,
+          `**Canal:** <#${m.channelId}>`,
+          `**Mensagem:** \`${m.id}\``,
+          `**Trecho:** ${corta(limparCodigo(m.content), 900)}`,
+          den.grave ? '-# isso derruba servidor e ban o dono. O ban é por sua conta.' : '',
+          apagouDen ? '' : '⚠️ **não consegui apagar** (confira minhas permissões neste canal).',
+        ].filter(Boolean), den.cor);
+        avisarDono([
+          den.grave ? '🚨 **alerta grave** — isso derruba servidor:' : '⚠️ apaguei uma mensagem denunciável:',
+          `**Categoria:** \`${den.cat}\``,
+          `**Quem:** <@${m.author.id}> (\`${m.author.id}\`)`,
+          `**Trecho:** ${corta(limparCodigo(m.content), 300)}`,
+        ].join('\n')).catch(() => {});
+        return; // nao cai no anti-flood: ja foi tratado (sem mute/timeout/ban por filtro)
+      }
+    }
+
+    // 0.5) a lista DO DONO (.bloquear): a formação casa o começo da palavra e as
+    //      evasões (estu -> estupro/stupro/st). Sem castigo: apaga e registra
+    //      (o dono vê no .antiflood e nos logs).
     if (m.content) {
       const stPal = lerPalavrasBloqueadas();
       const hit = casarPalavras(m.content, stPal);
@@ -1434,12 +1467,35 @@ client.on('messageCreate', async (m) => {
     const reasons = [];
     const now = Date.now();
 
-    // 1) (removido em 02/10) filtros de conteudo em codigo: textao, link/convite,
-    //    link-cdn, repeticao interna, asterisco, header e invisivel. O dono pediu
-    //    para ficar SO com o bloqueio dele: "remova qualquer filtro atual que
-    //    fizemos, vou ficar so com o meu bloqueio". O que sobra abaixo e anti-flood
-    //    (comportamento: repetir, floodar, encher de emoji/msg curta), nao conteudo
-    //    — e mesmo ele so apaga, nunca pune.
+    // 1) limite de caracteres por mensagem (nao poluir tela de celular)
+    if (m.content.length > cfg.chars) reasons.push(`chars>${cfg.chars}`);
+
+    // 1.5) qualquer link / convite de server morre na hora
+    if (temLink(m.content)) reasons.push('link');
+    // 1.5b) link de cdn do discord (imagem colada como texto / embed): morre sempre
+    if (temLinkCdn(m)) reasons.push('link-cdn');
+
+    // 1.55) repeticao DENTRO da mensagem: mesma palavra/emoji mais de 3x
+    //       (nigga\nnigga\nnigga..., oi oi oi oi, oioioioi, 😂😂😂😂). k liberado.
+    {
+      const rep = repeticaoInterna(m.content);
+      if (rep) reasons.push(rep);
+    }
+
+    // 1.6) asterisco (markdown quebrado tipo **teste*): apaga na hora, sem mais nada
+    if ((m.content || '').includes('*')) reasons.push('asterisco');
+
+    // 1.6b) comeca com # (tenta virar texto grande/bold): apaga na hora
+    if (/^#/.test((m.content || '').trim())) reasons.push('header');
+
+    // 1.7) mensagem invisivel (so espacos/zero-width/tags unicode): apaga na hora
+    {
+      const bruto = m.content || '';
+      const visivel = bruto.replace(RE_INV, '');
+      if (bruto.length > 0 && visivel.length === 0) {
+        reasons.push('invisivel');
+      }
+    }
 
     // 2) repeticao da MESMA mensagem pelo MESMO autor — a regra individual
     //    principal. O contador mora em antiflood_state.json (persiste):
@@ -1607,6 +1663,7 @@ async function avisarFalhaDelete(m, motivo, erro) {
 async function varrerFlood() {
   const cfgV = readJsonSafe(ANTIFLOOD_CFG, ANTIFLOOD_DEFAULT);
   const cfgRetro = cfgV.retroMs || ANTIFLOOD_DEFAULT.retroMs;
+  const cfgChars = cfgV.chars || ANTIFLOOD_DEFAULT.chars;
   // contadores de repeticao velhos nao precisam sobreviver no estado
   try { podarLedger(estadoAntiflood().rep, Date.now(), cfgV); salvarAntiflood(); } catch (e) { err(e); }
   for (const gid of INFERNO_GUILDS) {
@@ -1645,10 +1702,37 @@ async function varrerFlood() {
           for (let i = 5; i < curtas.length; i++) {
             if (curtas[i].createdTimestamp - curtas[i - 5].createdTimestamp < 60000) curtas.slice(i - 5, i + 1).forEach((x) => alvos.add(x));
           }
+          for (const x of arr) { const v = x.content || ''; if (v && !v.replace(RE_INV, '')) alvos.add(x); }
+          for (const x of arr) { if ((x.content || '').includes('*')) alvos.add(x); }
+          // mesmas regras instantaneas do messageCreate (pega o que passou enquanto o bot reiniciava)
+          for (const x of arr) {
+            const c = x.content || '';
+            if (c.length > cfgChars || repeticaoInterna(c) || temLinkCdn(x)) alvos.add(x);
+          }
         }
         for (const x of alvos) await x.delete().catch(() => {});
         if (alvos.size) log('VARREDURA_FLOOD', { canal: ch.id, apagadas: alvos.size });
       } catch (e) { /* sem permissao, segue */ }
+    }
+  }
+}
+
+// varre os canais ao ligar: apaga link que passou enquanto o bot reiniciava
+async function varrerLinks() {
+  for (const gid of INFERNO_GUILDS) {
+    const g = client.guilds.cache.get(gid);
+    if (!g) continue;
+    for (const ch of [...g.channels.cache.values()]) {
+      if (!ch.isTextBased()) continue;
+      try {
+        const msgs = await ch.messages.fetch({ limit: 100 });
+        const alvos = msgs.filter((x) => (!x.author.bot || x.webhookId) && !isOwnWebhookId(x.webhookId) && x.author.id !== OWNER_ID && temLink(x.content || '') && x.deletable);
+        if (!alvos.size) continue;
+        await ch.bulkDelete(alvos, true).catch(async () => {
+          for (const x of [...alvos.values()]) await x.delete().catch(() => {});
+        });
+        log('VARREDURA', { canal: ch.id, apagadas: alvos.size });
+      } catch (e) { /* sem permissao no canal, segue */ }
     }
   }
 }

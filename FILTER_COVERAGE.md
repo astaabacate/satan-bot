@@ -1,20 +1,13 @@
 # FILTER_COVERAGE — cobertura e limitações do filtro de conteúdo
 
-> **DESLIGADO em 02/10/2026 a pedido do dono.** O `classificarDenuncia` não é mais
-> chamado pelo `bot.js`: o único filtro de conteúdo é a lista do dono (`.bloquear`,
-> casamento por formação — ver `COMMANDS.md`). O módulo continua no repo porque a
-> lista usa o `normalizar` dele. O texto abaixo fica como referência do que as
-> regras cobriam, caso o dono queira religar (é só voltar a chamar o filtro no
-> `messageCreate`).
+> **LIGADO** (religado em 02/10/2026). O `classificarDenuncia` roda de novo no
+> `messageCreate` com prioridade máxima: apaga na hora e avisa o dono — sem
+> mute/timeout/ban por filtro. Junto voltaram os filtros de textão (>300),
+> link/convite, link de CDN, repetição interna, asterisco, `#` e invisível.
 >
-> Na mesma data também saíram os filtros de textão, link/convite, link de CDN,
-> repetição interna, asterisco, `#` e mensagem invisível. Sobrou só a lista do
-> dono (conteúdo) + o anti-flood (comportamento: repetir/floodar/emoji/msg curta),
-> e o anti-flood também só apaga — sem timeout nenhum.
->
-> O que eles pegavam **ao vivo** não volta: a faxina do histórico (no boot) varre
-> os canais e apaga o que já estava salvo e casa com a lista do dono **ou** com
-> qualquer uma dessas regras antigas (incluindo o `classificarDenuncia`).
+> O `classificarDenuncia` continua também na **faxina do histórico** (no boot):
+> a varredura apaga o que já estava salvo e casa com a lista do dono (`.bloquear`)
+> **ou** com esta classificação/regras de formato.
 
 Este documento descreve o que o filtro textual do bot cobre e o que ele **não** cobre. O filtro é apenas textual, não analisa imagem/vídeo/áudio.
 

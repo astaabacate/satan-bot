@@ -65,32 +65,32 @@ fugir do filtro:
 - Até 300 palavras, 60 caracteres cada
 - Fica em `blacklist_palavras.json`, sincronizado no repo
 
-## Faxina do histórico (bloqueio do dono + filtros antigos)
+## Faxina do histórico (bloqueio do dono + filtros)
 
 Quando o bot liga, ele varre o histórico dos canais e apaga **o que já estava lá**
 (não só o que chega depois):
 
 - tudo que casa com a **lista do dono** (`.bloquear`);
-- e também tudo que os **filtros antigos que saíram do código** teriam apagado:
-  link/convite, link de CDN, textão (>300), asterisco, mensagem com `#`,
-  invisível, repetição interna (mesma palavra/emoji 4x+) e o conteúdo do filtro
-  de denúncia (menor-sexual, violencia-sexual, automutilacao, ameaca, extorsao,
-  dox, gore).
+- e também tudo que os **filtros de conteúdo** pegam: link/convite, link de CDN,
+  textão (>300), asterisco, mensagem com `#`, invisível, repetição interna
+  (mesma palavra/emoji 4x+) e o conteúdo do filtro de denúncia (menor-sexual,
+  violencia-sexual, automutilacao, ameaca, extorsao, dox, gore).
 - até 5.000 mensagens por canal a cada rodada; continua de onde parou na próxima
 - roda no máximo 1x por hora — e na hora, de novo, se a lista mudar
 - pula o dono, bots e as mensagens dos próprios painéis/logs do bot
 - o que foi apagado fica no `.antiflood` e no `antiflood_state.json`
 
-## Filtros de conteúdo — só o bloqueio do dono
+## Filtros de conteúdo (ao vivo)
 
-- O filtro automático de conteúdo (`scripts/filtro-denuncia.js`) **não está mais
-  ligado**: o dono removeu em 02/10. O arquivo fica no repo e continua exportando
-  o `normalizar` usado pela lista.
-- Também foram removidos, a pedido do dono: textão (>300), link/convite e link de
-  CDN, repetição interna na mensagem, asterisco, mensagem começando com `#` e
-  mensagem invisível — nada disso é mais filtrado por código.
-- O único filtro de conteúdo é a lista do `.bloquear`. O que sobra é **anti-flood**
-  (comportamento: repetir, floodar, encher de emoji/msg curta) e mesmo ele só apaga.
+- **Denúncia** (`scripts/filtro-denuncia.js`) — prioridade máxima: apaga na hora
+  conteúdo que derruba servidor e ban o dono (menor-sexual, violencia-sexual,
+  automutilacao, ameaca, extorsao, dox, gore) e avisa o dono sempre. Sem
+  mute/timeout/ban por filtro.
+- **Lista do dono** (`.bloquear`) — casamento por formação.
+- **Formato/mídia** — textão (>300), link/convite, link de CDN, repetição interna
+  na mensagem, asterisco, mensagem começando com `#` e mensagem invisível.
+- Nenhum deles pune: filtro só apaga. O **anti-flood** (comportamento: repetir,
+  floodar, encher de emoji/msg curta) também só apaga — sem castigo.
 
 ## Removidos
 
