@@ -83,6 +83,16 @@
   },
   "acoes": [
     {
+      "ts": "2026-10-02T20:25:51.440Z",
+      "canal": "1555665375109320859",
+      "guild": "1554284137261830184",
+      "autor": "1554241546981871763",
+      "motivo": "bloqueio:macaq",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
       "ts": "2026-10-02T20:19:50.746Z",
       "canal": "1555665375109320859",
       "guild": "1554284137261830184",
@@ -670,8 +680,8 @@
   ],
   "stats": {
     "2026-10-02": {
-      "deteccoes": 59,
-      "apagadas": 49,
+      "deteccoes": 60,
+      "apagadas": 50,
       "castigos": 0,
       "falhas": 18
     }
