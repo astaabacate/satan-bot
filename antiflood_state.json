@@ -223,6 +223,25 @@
   },
   "acoes": [
     {
+      "ts": "2026-10-02T19:38:10.647Z",
+      "canal": "1554323715892715575",
+      "guild": "1554284137261830184",
+      "autor": "1539465305326227477",
+      "motivo": "bloqueio:cria",
+      "apagou": false,
+      "apagadas": 0,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-02T19:38:10.647Z",
+      "canal": "1554323715892715575",
+      "guild": "1554284137261830184",
+      "autor": "1539465305326227477",
+      "motivo": "bloqueio:cria",
+      "apagou": false,
+      "erro": "delete falhou"
+    },
+    {
       "ts": "2026-10-02T19:37:45.382Z",
       "canal": "1555656021630910484",
       "guild": "1554284137261830184",
@@ -410,10 +429,10 @@
   ],
   "stats": {
     "2026-10-02": {
-      "deteccoes": 19,
+      "deteccoes": 21,
       "apagadas": 12,
       "castigos": 0,
-      "falhas": 10
+      "falhas": 12
     }
   },
   "palavrasVarreduraEm": 1790969636526,
