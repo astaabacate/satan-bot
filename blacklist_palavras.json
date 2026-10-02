@@ -15,6 +15,28 @@
       "criadoEm": "2026-10-02T19:35:04.235Z",
       "usos": 1,
       "ultimoUso": "2026-10-02T19:35:04.607Z"
+    },
+    "cp": {
+      "termo": "cp",
+      "chave": "cp",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-10-02T19:35:13.880Z",
+      "usos": 1,
+      "ultimoUso": "2026-10-02T19:35:14.119Z"
+    },
+    "macac": {
+      "termo": "macac",
+      "chave": "macac",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-10-02T19:35:27.031Z",
+      "usos": 0
+    },
+    "macaq": {
+      "termo": "macaq",
+      "chave": "macaq",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-10-02T19:35:27.031Z",
+      "usos": 0
     }
   }
 }
