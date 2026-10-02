@@ -21,8 +21,8 @@
       "chave": "molestei",
       "por": "1521612392105250836",
       "criadoEm": "2026-09-30T02:26:21.599Z",
-      "usos": 1,
-      "ultimoUso": "2026-09-30T02:26:21.967Z"
+      "usos": 2,
+      "ultimoUso": "2026-10-02T00:46:14.840Z"
     },
     "molestando": {
       "termo": "molestando",
@@ -163,6 +163,20 @@
       "criadoEm": "2026-10-01T13:57:56.589Z",
       "usos": 1,
       "ultimoUso": "2026-10-01T13:57:56.750Z"
+    },
+    "molesta": {
+      "termo": "molesta",
+      "chave": "molesta",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-10-02T00:46:14.678Z",
+      "usos": 0
+    },
+    "molestador": {
+      "termo": "molestador",
+      "chave": "molestador",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-10-02T00:46:14.678Z",
+      "usos": 0
     }
   }
 }
