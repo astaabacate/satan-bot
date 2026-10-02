@@ -8,7 +8,7 @@ const { adicionarPalavras, removerPalavras, listarPalavras, casarPalavras, regis
 const { snapshotGuild } = require('./scripts/server-snapshot.js');
 const { watchDiscord } = require('./scripts/discord-health.js');
 const { corridaComTimeout, ehErroDeAutenticacao, TIMEOUT_CODE, CODIGO_LOGIN_TRAVADO, CODIGO_TOKEN_INVALIDO } = require('./scripts/login-guard.js');
-const { registrarRepeticao, decidirRepeticao, podarLedger } = require('./scripts/antiflood-regras.js');
+const { registrarRepeticao, decidirRepeticao, podarLedger, normalizarRep } = require('./scripts/antiflood-regras.js');
 // as regras antigas de conteudo sairam do filtro AO VIVO (pedido do dono em
 // 02/10: so a lista dele filtra), mas continuam aqui para a faxina do historico
 const { classificarDenuncia } = require('./scripts/filtro-denuncia.js');
@@ -46,7 +46,10 @@ const ANTIFLOOD_DEFAULT = {
   // de 1 copia a cada 30-40s, nao escapa mais (era o caso do print de 02/10).
   repeatWindowMs: 300000,
   repMs: 300000,
-  repApagar: 2,        // 2a copia -> apaga (inclusive as anteriores)
+  repApagar: 3,        // 3a copia -> apaga (inclusive as anteriores)
+  // msg curta / so emoji / figurinha: janela de 30s e 4 copias (o "kk" duas
+  // vezes em 27s que virou aviso falso de flood em 02/10 nao pode cair mais)
+  repApagarCurto: 4,
   retroMs: 10 * 60 * 1000, // limpeza retroativa: ate 10 min de copias
   emojiWindowMs: 60000,
   emojiMax: 5,
@@ -272,6 +275,15 @@ function msgSig(m) {
   const at = m.attachments.size ? [...m.attachments.values()].map((a) => a.width || a.height ? `img:${a.width}x${a.height}` : `f:${a.name}`).join(',') : '';
   const eb = m.embeds.length ? m.embeds.map((e) => (e.image && e.image.url) || (e.thumbnail && e.thumbnail.url) || e.title || 'eb').join('|') : '';
   return [txt, em, st, at, eb].filter(Boolean).join('#') || 'vazia';
+}
+// mensagem "curtinha" pro anti-flood: so emoji, texto de ate 7 chars ou
+// figurinha. Essas ganham mais folga (janela de 30s e mais copias) porque
+// repetir "kk"/"oi"/a mesma figurinha e conversa normal — foi esse o falso
+// positivo de 02/10/2026, que apagou (e acusou) quem so estava conversando.
+const RE_SO_EMOJI = /^[\p{Extended_Pictographic}\p{Emoji_Component}\u200d\ufe0f\s]+$/u;
+function msgCurta(m, sig) {
+  const txt = ((m && m.content) || '').trim();
+  return (txt.length > 0 && RE_SO_EMOJI.test(txt)) || String(sig || '').length < 8 || !!(m && m.stickers && m.stickers.size);
 }
 function msgKind(m) {
   if (m.stickers && m.stickers.size) return 'figurinha';
@@ -1449,18 +1461,24 @@ client.on('messageCreate', async (m) => {
               webhook: !!m.webhookId, termo: hit.termo, curouPal,
               erro: erroPal && (erroPal.code || erroPal.status || erroPal.message),
             });
-            avisarFalhaDelete(m, `bloqueio:${hit.termo}`, erroPal || 'delete falhou').catch(err);
+            // sem aviso em lugar nenhum (mesma regra do anti-flood): registro interno
+            registrarFalhaDelete(m, `bloqueio:${hit.termo}`, erroPal || 'delete falhou', { curouPal, termo: hit.termo });
           }
         }
         log('PALAVRA_BLOQUEADA', { guild: m.guild.id, canal: m.channelId, user: m.author.id, autorBot: !!m.author.bot, termo: hit.termo, usos: hit.entrada.usos, apagou: apagouPal });
-        registrarAcaoAntiflood({ canal: m.channelId, guild: m.guild.id, autor: m.author.id, motivo: `bloqueio:${hit.termo}`, apagou: apagouPal, apagadas: apagouPal ? 1 : 0, tipo: 'palavra', ...(apagouPal ? {} : { erro: corta(String((erroPal && (erroPal.code || erroPal.status)) || erroPal || 'delete falhou'), 120), autorBot: !!m.author.bot, webhook: !!m.webhookId }) });
-        logEvento('🚫 palavra bloqueada', [
-          `**Palavra:** \`${hit.termo}\``,
-          `**Conta:** <@${m.author.id}> (\`${m.author.id}\`)`,
-          `**Canal:** <#${m.channelId}>`,
-          `**Trecho:** ${corta(limparCodigo(m.content), 300)}`,
-          apagouPal ? '' : '⚠️ **não consegui apagar** (confira minhas permissões neste canal).',
-        ].filter(Boolean), 0x992d22);
+        // a falha ja foi registrada por registrarFalhaDelete (com o erro real):
+        // aqui so entra o que realmente aconteceu, sem registro duplicado
+        if (apagouPal) registrarAcaoAntiflood({ canal: m.channelId, guild: m.guild.id, autor: m.author.id, motivo: `bloqueio:${hit.termo}`, apagou: true, apagadas: 1, tipo: 'palavra' });
+        // o card so sai quando a mensagem foi mesmo apagada: nada de aviso de
+        // falha de delete em lugar nenhum (pedido do dono, 02/10)
+        if (apagouPal) {
+          logEvento('🚫 palavra bloqueada', [
+            `**Palavra:** \`${hit.termo}\``,
+            `**Conta:** <@${m.author.id}> (\`${m.author.id}\`)`,
+            `**Canal:** <#${m.channelId}>`,
+            `**Trecho:** ${corta(limparCodigo(m.content), 300)}`,
+          ], 0x992d22);
+        }
         return;
       }
     }
@@ -1500,22 +1518,23 @@ client.on('messageCreate', async (m) => {
 
     // 2) repeticao da MESMA mensagem pelo MESMO autor — a regra individual
     //    principal. O contador mora em antiflood_state.json (persiste):
-    //      a partir da 2a copia na janela -> apaga essa, as anteriores e o
-    //      backlog do autor. SEM castigo (o dono nao quer timeout): so apagar.
+    //      da 3a copia na janela -> apaga essa, as anteriores e o backlog do
+    //      autor (msg curtinha/emoji/figurinha: 4 copias em 30s, ver abaixo).
+    //      SEM castigo (o dono nao quer timeout): so apagar.
     //    Janela de 5 min: pega o flood lento (1 copia a cada ~40s) que a janela
     //    antiga de 30s deixava passar — e que tambem se perdia a cada restart
     //    do bot, porque o contador era so memoria.
     let repeticaoAgora = null;
     {
       const sig = msgSig(m);
-      const txt = (m.content || '').trim();
-      const soEmoji = txt.length > 0 && /^[\p{Extended_Pictographic}\p{Emoji_Component}\u200d\ufe0f\s]+$/u.test(txt);
-      // mensagem curtinha/emoji: janela CURTA (30s), senao "kkk" ou o mesmo
-      // emoji duas vezes em 5 min de conversa normal cairia como flood
-      const cfgRep = soEmoji || sig.length < 8 ? { ...cfg, repMs: Math.min(30000, cfg.repMs || 30000) } : cfg;
+      // mensagem curtinha/emoji/figurinha: janela CURTA (30s) E limite MAIOR
+      // (4 copias). "kk" duas vezes em 27s de conversa normal nao e flood — foi
+      // esse o falso positivo que fez o bot acusar quem so estava conversando.
+      const curta = msgCurta(m, sig);
+      const cfgRep = curta ? { ...cfg, repMs: Math.min(30000, cfg.repMs || 30000) } : cfg;
       const stAF = estadoAntiflood();
       const rep = registrarRepeticao(stAF.rep, { userId: m.author.id, sig, agora: now, cfg: cfgRep });
-      const decisao = decidirRepeticao(rep.qtd, cfg);
+      const decisao = decidirRepeticao(rep.qtd, cfgRep, { curta });
       if (decisao) {
         repeticaoAgora = { ...rep, decisao };
         reasons.push(`repetiu-${rep.qtd}x`);
@@ -1603,65 +1622,71 @@ client.on('messageCreate', async (m) => {
       if (!apagou) {
         const curou = await garantirPermModeracao(m.guild, m.channel).catch(() => false);
         if (curou) apagou = await m.delete().then(() => true).catch((e) => { erroAF = e; return false; });
-        if (!apagou) {
-          log('ANTIFLOOD_DELETE_FAIL', { reason: motivo, author: m.author.id, channel: m.channelId, deletable: m.deletable, curou, erro: erroAF && (erroAF.code || erroAF.status || erroAF.message) });
-          avisarFalhaDelete(m, motivo, erroAF || 'delete falhou (mesmo depois de tentar consertar a permissão)').catch(err);
-        }
+        // falha de delete NAO avisa ninguem (nem no canal, nem nos logs, nem na
+        // DM): so fica registrada no antiflood_state.json / `.antiflood`
+        if (!apagou) registrarFalhaDelete(m, motivo, erroAF || 'delete falhou (mesmo depois de tentar consertar a permissão)', { curou });
       }
       const apagadas = (apagou ? 1 : 0) + retro;
       log('ANTIFLOOD', { reason: motivo, kind: msgKind(m), author: m.author.id, channel: m.channelId, len: m.content.length, apagou, retro });
-      registrarAcaoAntiflood({
-        canal: m.channelId, guild: m.guild.id, autor: m.author.id, motivo,
-        apagou, apagadas, tipo: msgKind(m),
-      });
-      // visivel pro dono: antes a acao ia so pro console do runner e parecia
-      // que o bot "nao fazia nada" no servidor
-      logEvento('🛡️ Anti-flood', [
-        `**Conta:** <@${m.author.id}>`,
-        `**Canal:** <#${m.channelId}>`,
-        `**Motivo:** \`${motivo}\``,
-        apagou ? `**Mensagens apagadas:** ${apagadas}${retro ? ` (${retro} retroativa${retro > 1 ? 's' : ''})` : ''}` : '⚠️ **Não consegui apagar** (confira as permissões).',
-      ], apagou ? 0xe67e22 : 0xff4444);
+      // quando o delete falha, o registro (com o erro real) ja e feito por
+      // registrarFalhaDelete — nao duplica a acao no estado/.antiflood
+      if (apagou) {
+        registrarAcaoAntiflood({
+          canal: m.channelId, guild: m.guild.id, autor: m.author.id, motivo,
+          apagou, apagadas, tipo: msgKind(m),
+        });
+      }
+      // log do anti-flood (canal de logs, que so existe com `.logs on`): SÓ
+      // quando o bot realmente apagou. Nada de aviso de "nao consegui apagar"
+      // em lugar nenhum (pedido do dono em 02/10) — a falha fica no
+      // antiflood_state.json e no `.antiflood`, pra consulta, nao como aviso.
+      if (apagou) {
+        logEvento('🛡️ Anti-flood', [
+          `**Conta:** <@${m.author.id}>`,
+          `**Canal:** <#${m.channelId}>`,
+          `**Motivo:** \`${motivo}\``,
+          `**Mensagens apagadas:** ${apagadas}${retro ? ` (${retro} retroativa${retro > 1 ? 's' : ''})` : ''}`,
+        ], 0xe67e22);
+      }
     }
   } catch (e) {
     err(e);
   }
 });
 
-// delete falhando (normalmente falta Gerenciar Mensagens no canal) nao pode ser
-// silencioso: avisa o dono 1x por canal a cada 30min e registra no canal de logs
-const falhaDeleteAvisoEm = new Map(); // channelId -> ts do ultimo aviso
-async function avisarFalhaDelete(m, motivo, erro) {
+// delete falhando (normalmente falta Gerenciar Mensagens no canal, ou o autor
+// tem cargo igual/acima do bot) fica registrado em SILENCIO.
+//
+// Antes isto aqui avisava em 3 lugares: card no canal de logs, mensagem no
+// proprio canal ("⚠️ detectei flood de @fulano mas não consegui apagar... já
+// avisei o dono") e DM pro dono. Em 02/10/2026 esse aviso saiu por causa de um
+// falso positivo — a pessoa só estava conversando — e o servidor inteiro viu a
+// acusacao. Pedido do dono: "não quero que ele me avise nada nem mande isso em
+// nenhum lugar". Agora a falha vira só registro interno: antiflood_state.json
+// (versionado, com erro real e posicao dos cargos) e o painel `.antiflood`.
+function registrarFalhaDelete(m, motivo, erro, extra = {}) {
   const codigo = Number((erro && erro.code) || (erro && erro.status)) || 0;
   const semPerm = !m.deletable || [50001, 50013].includes(codigo);
-  const agora = Date.now();
-  // toda falha fica registrada no antiflood_state.json (versionado no repo):
-  // mesmo com o canal de logs off, da pra ver depois que o bot TENTOU e falhou
-  // posicao do cargo do autor x posicao do cargo do bot: e o que explica delete
-  // recusado mesmo com Gerenciar Mensagens (autor com cargo igual/acima do bot)
   const posCargo = (mem) => (mem && mem.roles && mem.roles.highest ? mem.roles.highest.position : null);
-  registrarAcaoAntiflood({
-    canal: m.channelId, guild: m.guild && m.guild.id, autor: m.author.id, motivo,
-    apagou: false, erro: corta(String(erro || 'desconhecido'), 120),
-    autorBot: !!(m.author && m.author.bot), webhook: !!m.webhookId,
-    canalNome: m.channel && m.channel.name,
-    posAutor: posCargo(m.member),
-    posBot: m.guild && m.guild.members ? posCargo(m.guild.members.me) : null,
+  try {
+    // posicao do cargo do autor x posicao do cargo do bot: e o que explica
+    // delete recusado mesmo com Gerenciar Mensagens
+    registrarAcaoAntiflood({
+      canal: m.channelId, guild: m.guild && m.guild.id, autor: m.author.id, motivo,
+      apagou: false, erro: corta(String(erro || 'desconhecido'), 120),
+      autorBot: !!(m.author && m.author.bot), webhook: !!m.webhookId,
+      canalNome: m.channel && m.channel.name,
+      posAutor: posCargo(m.member),
+      posBot: m.guild && m.guild.members ? posCargo(m.guild.members.me) : null,
+      ...extra,
+    });
+  } catch (e) { err(e); }
+  log('ANTIFLOOD_DELETE_FAIL', {
+    canal: m.channelId, motivo, autor: m.author && m.author.id,
+    semPerm, deletable: !!m.deletable,
+    erro: (erro && (erro.code || erro.status || erro.message)) || String(erro || 'desconhecido'),
+    ...extra,
   });
-  const ultimo = falhaDeleteAvisoEm.get(m.channelId) || 0;
-  if (agora - ultimo < 30 * 60 * 1000) return;
-  falhaDeleteAvisoEm.set(m.channelId, agora);
-  logEvento('⚠️ Anti-flood sem permissão', [
-    `**Canal:** <#${m.channelId}>`,
-    `**Motivo do anti-flood:** \`${motivo}\``,
-    `**Erro:** ${erro || 'desconhecido'}`,
-    semPerm ? 'Preciso de **Gerenciar Mensagens** (e Histórico) neste canal.' : 'Confira as permissões do bot.',
-  ], 0xff4444);
-  // aviso no proprio canal: se o bot nao consegue apagar, todo mundo ve que ele
-  // ao menos detectou — e o dono fica sabendo por DM, nao por acaso
-  const tmp = await whSend(m.channel, `⚠️ detectei flood de <@${m.author.id}> mas **não consegui apagar** (${semPerm ? 'falta Gerenciar Mensagens neste canal' : 'erro: ' + (erro || '?')}). já avisei o dono.`).catch(() => null);
-  if (tmp) setTimeout(() => tmp.delete().catch(() => {}), 20000);
-  await avisarDono(`⚠️ Não consegui apagar spam em <#${m.channelId}> (motivo: ${motivo}). ${semPerm ? 'Falta permissão de Gerenciar Mensagens neste canal.' : 'Erro: ' + (erro || '?')}`);
 }
 
 // ---------- anti-flood: só apagar ----------
@@ -1671,7 +1696,7 @@ async function avisarFalhaDelete(m, motivo, erro) {
 // varre os canais ao ligar: apaga sobra de flood/repetida/invisivel que passou durante o gap do restart
 async function varrerFlood() {
   const cfgV = readJsonSafe(ANTIFLOOD_CFG, ANTIFLOOD_DEFAULT);
-  const cfgRetro = cfgV.retroMs || ANTIFLOOD_DEFAULT.retroMs;
+  const cfgRepV = normalizarRep(cfgV);
   const cfgChars = cfgV.chars || ANTIFLOOD_DEFAULT.chars;
   // contadores de repeticao velhos nao precisam sobreviver no estado
   try { podarLedger(estadoAntiflood().rep, Date.now(), cfgV); salvarAntiflood(); } catch (e) { err(e); }
@@ -1687,12 +1712,10 @@ async function varrerFlood() {
         const alvos = new Set();
         for (const arr of Object.values(por)) {
           arr.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-          for (let i = 1; i < arr.length; i++) {
-            if (msgSig(arr[i]) === msgSig(arr[i - 1]) && arr[i].createdTimestamp - arr[i - 1].createdTimestamp < 30000) alvos.add(arr[i]);
-          }
-          // o MESMO autor repetindo a MESMA mensagem 3+ vezes em ate 10 min
-          // (qualquer espacamento): o flood lento que o corte de 30s acima
-          // deixava de pe no boot do bot
+          // repeticao da MESMA mensagem: MESMA regra do ao vivo (msg curta/
+          // emoji/figurinha: 4 copias em 30s; msg normal: 3 copias em 5 min).
+          // Antes a varredura apagava 2 copias em 30s no boot do bot — e era
+          // exatamente isso que pegava conversa normal (falso positivo 02/10).
           const porSig = new Map();
           for (const x of arr) {
             const s = msgSig(x);
@@ -1700,11 +1723,13 @@ async function varrerFlood() {
             porSig.get(s).push(x);
           }
           for (const grupo of porSig.values()) {
-            if (grupo.length < 3) continue;
-            for (let i = 2; i < grupo.length; i++) {
-              if (grupo[i].createdTimestamp - grupo[i - 2].createdTimestamp < cfgRetro) {
-                alvos.add(grupo[i - 2]); alvos.add(grupo[i - 1]); alvos.add(grupo[i]);
-              }
+            const curta = msgCurta(grupo[0], msgSig(grupo[0]));
+            const janela = curta ? Math.min(30000, cfgRepV.repMs) : cfgRepV.repMs;
+            const limite = curta ? cfgRepV.repApagarCurto : cfgRepV.repApagar;
+            for (let i = 0; i < grupo.length; i++) {
+              const t0 = grupo[i].createdTimestamp;
+              const dentro = grupo.filter((x) => x.createdTimestamp >= t0 && x.createdTimestamp - t0 < janela);
+              if (dentro.length >= limite) dentro.forEach((x) => alvos.add(x));
             }
           }
           const curtas = arr.filter((x) => { const v = (x.content || '').trim(); return v.length > 0 && v.length <= 3; });

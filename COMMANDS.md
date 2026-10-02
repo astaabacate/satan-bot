@@ -20,11 +20,17 @@ Só o dono (`OWNER_ID`) pode usar. Todos os outros comandos foram removidos.
 
 Quem repete a **mesma mensagem** cai sozinho, sem precisar de mais ninguém:
 
-- **2ª cópia em até 5 min** → apaga essa, as anteriores e o backlog do autor
-  (até 10 min de cópias; pega até o que passou antes de um restart)
-- da 2ª em diante é sempre apagar. **Não existe mais castigo/timeout** (1h, 2h...)
+- **3ª cópia da mesma mensagem em até 5 min** → apaga essa, as anteriores e o
+  backlog do autor (até 10 min de cópias; pega até o que passou antes de um restart)
+- **msg curtinha, só emoji ou figurinha é mais tolerada**: precisa de **4 cópias
+  em até 30s** (antes a 2ª cópia de um "kk" em 27s já apagava — foi o falso
+  positivo de 02/10 que acusou de flood quem só estava conversando)
+- da 3ª em diante (4ª nas curtas) é sempre apagar. **Não existe mais castigo/timeout** (1h, 2h...)
 - rajada (6+ msgs em 6s), chuva de emoji e msg curtinha seguem como anti-spam, também só apagando
 - **sem regra "de várias contas"**: cada conta é tratada individualmente
+- **falha de exclusão não avisa em lugar nenhum**: nem mensagem no canal, nem
+  card no canal de logs, nem DM. Só fica registrada no `antiflood_state.json` e
+  no `.antiflood` (erro real + posição dos cargos), pra consulta quando quiser.
 
 O contador fica em `antiflood_state.json` (versionado no repo), então religar o
 bot **não zera** mais a conta de quem estava floodando. Tudo que o anti-flood faz

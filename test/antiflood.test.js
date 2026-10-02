@@ -1,5 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const {
   DEFAULT, normalizarRep, chaveSig, registrarRepeticao, decidirRepeticao,
   podarLedger, contarRepetidas,
@@ -10,14 +12,45 @@ const {
 // e o castigo na 11a copia, isso passava batido ("o bot nao faz nada").
 const FRASE = 'eai boy prazer 17 anos alto cabelo cacheado';
 
-test('padroes: da 2a copia em diante so apaga (sem castigo), janela de 5 min', () => {
+test('padroes: da 3a copia em diante so apaga (sem castigo), janela de 5 min', () => {
   const c = normalizarRep({});
-  assert.equal(c.repApagar, 2);
+  assert.equal(c.repApagar, 3);
   assert.equal(c.repMs, DEFAULT.repMs);
   assert.equal(decidirRepeticao(1, {}), null);
-  assert.equal(decidirRepeticao(2, {}), 'apagar');
+  assert.equal(decidirRepeticao(2, {}), null); // 2a copia em 5 min pode ser conversa
   assert.equal(decidirRepeticao(3, {}), 'apagar');
   assert.equal(decidirRepeticao(9, {}), 'apagar');
+});
+
+test('falso positivo de 02/10/2026: "kk" duas vezes em 27s NAO pode apagar', () => {
+  // caso real: a pessoa mandou 12 mensagens diferentes em 4 min; as duas unicas
+  // iguais eram uma msg de 2 chars, com 27s de diferenca. O bot contava na
+  // janela curta (30s) mas decidia com o limite da regra normal -> apagava (e,
+  // quando o delete falhava, avisava o servidor que a pessoa estava floodando).
+  const ledger = {};
+  const t0 = 1_900_000_000_000;
+  const cfgCurto = { repMs: 30_000 };
+  let r = registrarRepeticao(ledger, { userId: '1', sig: 'kk', agora: t0, cfg: cfgCurto });
+  assert.equal(r.qtd, 1);
+  assert.equal(decidirRepeticao(r.qtd, cfgCurto, { curta: true }), null);
+  r = registrarRepeticao(ledger, { userId: '1', sig: 'kk', agora: t0 + 27_000, cfg: cfgCurto });
+  assert.equal(r.qtd, 2);
+  assert.equal(decidirRepeticao(r.qtd, cfgCurto, { curta: true }), null); // era aqui que apagava
+  // 3a copia em 30s ainda e' conversa; a chuva de verdade (4+) cai
+  r = registrarRepeticao(ledger, { userId: '1', sig: 'kk', agora: t0 + 28_000, cfg: cfgCurto });
+  assert.equal(decidirRepeticao(r.qtd, cfgCurto, { curta: true }), null);
+  r = registrarRepeticao(ledger, { userId: '1', sig: 'kk', agora: t0 + 29_000, cfg: cfgCurto });
+  assert.equal(r.qtd, 4);
+  assert.equal(decidirRepeticao(r.qtd, cfgCurto, { curta: true }), 'apagar');
+});
+
+test('msg curta nunca e mais facil de cair que msg normal (curta exige mais copias)', () => {
+  const c = normalizarRep({});
+  assert.equal(c.repApagarCurto, 4);
+  assert.ok(c.repApagarCurto > c.repApagar);
+  // mesmo se o dono configurar o limite normal bem alto, a regra curta acompanha
+  const c2 = normalizarRep({ repApagar: 6 });
+  assert.equal(c2.repApagarCurto, 7);
 });
 
 test('a MESMA frase repetida em ~40s cai na escada (antes passava)', () => {
@@ -31,8 +64,8 @@ test('a MESMA frase repetida em ~40s cai na escada (antes passava)', () => {
   // 2a copia 40s depois (a janela antiga de 30s perdia isso)
   r = registrarRepeticao(ledger, { userId: autor, sig: FRASE, agora: t0 + 40_000 });
   assert.equal(r.qtd, 2);
-  assert.equal(decidirRepeticao(r.qtd, {}), 'apagar');
-  // 3a copia 40s depois -> continua so apagando
+  assert.equal(decidirRepeticao(r.qtd, {}), null);
+  // 3a copia 40s depois -> apaga (o flood lento continua caindo)
   r = registrarRepeticao(ledger, { userId: autor, sig: FRASE, agora: t0 + 80_000 });
   assert.equal(r.qtd, 3);
   assert.equal(decidirRepeticao(r.qtd, {}), 'apagar');
@@ -112,4 +145,26 @@ test('estado persistido (JSON) continua valendo depois de recarregar', () => {
   const r = registrarRepeticao(recarregado, { userId: '1', sig: FRASE, agora: t0 + 120_000 });
   assert.equal(r.qtd, 3);
   assert.equal(decidirRepeticao(r.qtd, {}), 'apagar');
+});
+
+test('falha de delete nao vira aviso em lugar nenhum (pedido do dono, 02/10)', () => {
+  // o aviso "⚠️ detectei flood de @fulano mas nao consegui apagar... ja avisei o
+  // dono" saiu no canal por causa de um falso positivo e o servidor inteiro viu.
+  // Agora falha de delete e' registro interno (antiflood_state.json/.antiflood).
+  const src = fs.readFileSync(path.join(__dirname, '..', 'bot.js'), 'utf8');
+  // comentarios podem citar o aviso antigo (documentacao); o CODIGO nao pode
+  const codigo = src
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .split('\n')
+    .filter((l) => !/^\s*\/\//.test(l))
+    .join('\n');
+  assert.ok(!/detectei flood/i.test(codigo), 'nao pode existir aviso de flood no canal');
+  assert.ok(!/Anti-flood sem permiss/i.test(codigo), 'nao pode existir card de "sem permissao"');
+  const inicio = src.indexOf('function registrarFalhaDelete');
+  assert.ok(inicio > -1, 'registrarFalhaDelete continua existindo');
+  const corpo = src.slice(inicio, src.indexOf('\n}', inicio) + 2);
+  assert.ok(!/logEvento\s*\(/.test(corpo), 'registrarFalhaDelete nao pode postar card de log');
+  assert.ok(!/avisarDono\s*\(/.test(corpo), 'registrarFalhaDelete nao pode mandar DM pro dono');
+  assert.ok(!/whSend\s*\(/.test(corpo), 'registrarFalhaDelete nao pode falar no canal');
+  assert.ok(/registrarAcaoAntiflood\s*\(/.test(corpo), 'a falha continua registrada no estado/.antiflood');
 });

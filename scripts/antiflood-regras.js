@@ -12,13 +12,23 @@
 //   - os contadores viviam na memoria -> todo restart do bot (e ele reinicia
 //     muito) zerava a conta no meio do flood
 //
-// Agora: contador persistente (antiflood_state.json), janela de 5 min e regra
-// curta -> da 2a copia em diante apaga (e o backlog do autor). So apagar: sem
+// Depois veio o caso de 02/10/2026 a noite: "kk" duas vezes em 27s (2 chars,
+// conversa normal) caiu como repetiu-2x, e quando o delete falhou o bot avisou
+// o servidor que a pessoa estava floodando. Falso positivo.
+//
+// Agora: contador persistente (antiflood_state.json), janela de 5 min e 3a copia
+// -> apaga (o backlog do autor tambem). Mensagem curtinha/emoji/figurinha e
+// tratada com mais paciencia: janela de 30s e 4 copias. So apagar: sem
 // castigo/timeout. Uma pessoa so, sem regra nenhuma "de varias contas juntas".
 
 const DEFAULT = {
   repMs: 5 * 60 * 1000, // janela em que copias da MESMA mensagem contam
-  repApagar: 2,         // 2a copia na janela -> apaga (inclusive as anteriores)
+  repApagar: 3,         // 3a copia na janela -> apaga (inclusive as anteriores)
+  // mensagem curtinha / so emoji / figurinha: janela de 30s e precisa de MAIS
+  // copias. Foi o falso positivo de 02/10/2026: "kk" (2 chars) duas vezes em 27s
+  // numa conversa normal caiu como repetiu-2x e o bot tentou apagar (e, quando o
+  // delete falhou, avisou o servidor inteiro que a pessoa estava floodando).
+  repApagarCurto: 4,
   maxChavesPorAutor: 12, // poda: quantas mensagens diferentes rastreamos por autor
 };
 
@@ -29,9 +39,12 @@ function inteiroPositivo(v, padrao) {
 
 // cfg vem do antispam_config.json (ou do ANTIFLOOD_DEFAULT do bot.js)
 function normalizarRep(cfg = {}) {
+  const repApagar = Math.max(2, inteiroPositivo(cfg.repApagar, DEFAULT.repApagar));
   return {
     repMs: inteiroPositivo(cfg.repMs, DEFAULT.repMs),
-    repApagar: Math.max(2, inteiroPositivo(cfg.repApagar, DEFAULT.repApagar)),
+    repApagar,
+    // mensagem curta nunca pode ser MAIS facil de cair que a normal
+    repApagarCurto: Math.max(repApagar + 1, inteiroPositivo(cfg.repApagarCurto, DEFAULT.repApagarCurto)),
     maxChavesPorAutor: inteiroPositivo(cfg.maxChavesPorAutor, DEFAULT.maxChavesPorAutor),
   };
 }
@@ -63,9 +76,14 @@ function registrarRepeticao(ledger, { userId, sig, agora = Date.now(), cfg } = {
 
 // o que fazer com a contagem: null | 'apagar'
 // (castigo/timeout removido a pedido do dono: aqui é só apagar)
-function decidirRepeticao(qtd, cfg) {
+// curta=true -> mensagem curtinha/emoji/figurinha: exige repApagarCurto copias
+// (antes o bot contava a msg curta numa janela de 30s mas decidia com o limite
+//  da regra normal, entao a protecao da msg curta virava o oposto: 2 copias em
+//  27s apagavam uma conversa normal — o falso positivo de 02/10/2026)
+function decidirRepeticao(qtd, cfg, { curta = false } = {}) {
   const c = normalizarRep(cfg);
-  if (qtd >= c.repApagar) return 'apagar';
+  const limite = curta ? c.repApagarCurto : c.repApagar;
+  if (qtd >= limite) return 'apagar';
   return null;
 }
 
