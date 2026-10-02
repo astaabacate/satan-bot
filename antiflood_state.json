@@ -313,6 +313,16 @@
   },
   "acoes": [
     {
+      "ts": "2026-10-02T19:37:14.838Z",
+      "canal": "1555656021630910484",
+      "guild": "1554284137261830184",
+      "autor": "1554165512416665714",
+      "motivo": "bloqueio:estup",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
       "ts": "2026-10-02T19:37:06.658Z",
       "canal": "1554323715892715575",
       "guild": "1554284137261830184",
@@ -450,8 +460,8 @@
   ],
   "stats": {
     "2026-10-02": {
-      "deteccoes": 14,
-      "apagadas": 7,
+      "deteccoes": 15,
+      "apagadas": 8,
       "castigos": 0,
       "falhas": 10
     }
