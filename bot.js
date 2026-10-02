@@ -165,7 +165,6 @@ async function apagarRelacionadas(m, recentes, motivo) {
     // só o MESMO autor: o anti-flood é individual (o dono não quer regra que
     // mexe na mensagem dos outros)
     if (e.userId !== m.author.id) continue;
-    if (!e.suspeita && !similarTexto(m.content || '', e.content || '')) continue;
     if (!similarTexto(m.content || '', e.content || '')) continue;
     const ok = await m.channel.messages.delete(e.id).then(() => true).catch(() => false);
     if (ok) n++;
