@@ -1598,13 +1598,14 @@ client.on('messageCreate', async (m) => {
       if (repeticaoAgora) retro += await limparRepetidasDoAutor(m, cfg.retroMs || RECENT_MSG_MS).catch(() => 0);
       // apaga a mensagem atual; se falhar, tenta se curar (canal sem permissao:
       // nuke/overwrite quebrado) e so entao avisa o dono — sem silencio
-      let apagou = await m.delete().then(() => true).catch(() => false);
+      let erroAF = null;
+      let apagou = await m.delete().then(() => true).catch((e) => { erroAF = e; return false; });
       if (!apagou) {
         const curou = await garantirPermModeracao(m.guild, m.channel).catch(() => false);
-        if (curou) apagou = await m.delete().then(() => true).catch(() => false);
+        if (curou) apagou = await m.delete().then(() => true).catch((e) => { erroAF = e; return false; });
         if (!apagou) {
-          log('ANTIFLOOD_DELETE_FAIL', { reason: motivo, author: m.author.id, channel: m.channelId, deletable: m.deletable, curou });
-          avisarFalhaDelete(m, motivo, 'delete falhou (mesmo depois de tentar consertar a permissão)').catch(err);
+          log('ANTIFLOOD_DELETE_FAIL', { reason: motivo, author: m.author.id, channel: m.channelId, deletable: m.deletable, curou, erro: erroAF && (erroAF.code || erroAF.status || erroAF.message) });
+          avisarFalhaDelete(m, motivo, erroAF || 'delete falhou (mesmo depois de tentar consertar a permissão)').catch(err);
         }
       }
       const apagadas = (apagou ? 1 : 0) + retro;
@@ -1636,10 +1637,16 @@ async function avisarFalhaDelete(m, motivo, erro) {
   const agora = Date.now();
   // toda falha fica registrada no antiflood_state.json (versionado no repo):
   // mesmo com o canal de logs off, da pra ver depois que o bot TENTOU e falhou
+  // posicao do cargo do autor x posicao do cargo do bot: e o que explica delete
+  // recusado mesmo com Gerenciar Mensagens (autor com cargo igual/acima do bot)
+  const posCargo = (mem) => (mem && mem.roles && mem.roles.highest ? mem.roles.highest.position : null);
   registrarAcaoAntiflood({
     canal: m.channelId, guild: m.guild && m.guild.id, autor: m.author.id, motivo,
     apagou: false, erro: corta(String(erro || 'desconhecido'), 120),
     autorBot: !!(m.author && m.author.bot), webhook: !!m.webhookId,
+    canalNome: m.channel && m.channel.name,
+    posAutor: posCargo(m.member),
+    posBot: m.guild && m.guild.members ? posCargo(m.guild.members.me) : null,
   });
   const ultimo = falhaDeleteAvisoEm.get(m.channelId) || 0;
   if (agora - ultimo < 30 * 60 * 1000) return;
