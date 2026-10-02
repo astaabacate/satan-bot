@@ -1434,10 +1434,26 @@ client.on('messageCreate', async (m) => {
       if (hit) {
         registrarUso(stPal, hit.chave);
         salvarPalavras(stPal);
-        const apagouPal = await m.delete().then(() => true).catch(() => false);
-        if (!apagouPal) avisarFalhaDelete(m, `bloqueio:${hit.termo}`, 'delete falhou').catch(err);
-        log('PALAVRA_BLOQUEADA', { guild: m.guild.id, canal: m.channelId, user: m.author.id, termo: hit.termo, usos: hit.entrada.usos, apagou: apagouPal });
-        registrarAcaoAntiflood({ canal: m.channelId, guild: m.guild.id, autor: m.author.id, motivo: `bloqueio:${hit.termo}`, apagou: apagouPal, apagadas: apagouPal ? 1 : 0, tipo: 'palavra' });
+        let erroPal = null;
+        let apagouPal = await m.delete().then(() => true).catch((e) => { erroPal = e; return false; });
+        if (!apagouPal) {
+          // canal com permissao quebrada (nuke/overwrite): tenta reparar e repete
+          const curouPal = await garantirPermModeracao(m.guild, m.channel).catch(() => false);
+          if (curouPal) apagouPal = await m.delete().then(() => true).catch((e) => { erroPal = e; return false; });
+          if (!apagouPal) {
+            // guarda o erro REAL no estado (antes ficava so "delete falhou"):
+            // e assim que da pra saber se foi falta de permissao (50013), mensagem
+            // ja apagada (10008) ou rate limit (429)
+            log('PALAVRA_BLOQUEADA_FALHA', {
+              guild: m.guild.id, canal: m.channelId, user: m.author.id, autorBot: !!m.author.bot,
+              webhook: !!m.webhookId, termo: hit.termo, curouPal,
+              erro: erroPal && (erroPal.code || erroPal.status || erroPal.message),
+            });
+            avisarFalhaDelete(m, `bloqueio:${hit.termo}`, erroPal || 'delete falhou').catch(err);
+          }
+        }
+        log('PALAVRA_BLOQUEADA', { guild: m.guild.id, canal: m.channelId, user: m.author.id, autorBot: !!m.author.bot, termo: hit.termo, usos: hit.entrada.usos, apagou: apagouPal });
+        registrarAcaoAntiflood({ canal: m.channelId, guild: m.guild.id, autor: m.author.id, motivo: `bloqueio:${hit.termo}`, apagou: apagouPal, apagadas: apagouPal ? 1 : 0, tipo: 'palavra', ...(apagouPal ? {} : { erro: corta(String((erroPal && (erroPal.code || erroPal.status)) || erroPal || 'delete falhou'), 120), autorBot: !!m.author.bot, webhook: !!m.webhookId }) });
         logEvento('🚫 palavra bloqueada', [
           `**Palavra:** \`${hit.termo}\``,
           `**Conta:** <@${m.author.id}> (\`${m.author.id}\`)`,
@@ -1623,6 +1639,7 @@ async function avisarFalhaDelete(m, motivo, erro) {
   registrarAcaoAntiflood({
     canal: m.channelId, guild: m.guild && m.guild.id, autor: m.author.id, motivo,
     apagou: false, erro: corta(String(erro || 'desconhecido'), 120),
+    autorBot: !!(m.author && m.author.bot), webhook: !!m.webhookId,
   });
   const ultimo = falhaDeleteAvisoEm.get(m.channelId) || 0;
   if (agora - ultimo < 30 * 60 * 1000) return;
@@ -1750,6 +1767,15 @@ function motivosLegado(x, cfg) {
 // cada PURGA_INTERVALO_MS, e na hora de novo se a lista mudou.
 const PURGA_PAGINAS = 50; // 50 x 100 msgs por canal a cada rodada
 const PURGA_INTERVALO_MS = 60 * 60 * 1000;
+// a lista do dono mudou (ele adicionou palavra): re-varre o historico em alguns
+// minutos — sem isso a purga so rodaria no proximo boot do bot
+let faxinaTimer = null;
+function agendarFaxina(atrasoMs = 3 * 60 * 1000) {
+  if (faxinaTimer) clearTimeout(faxinaTimer);
+  faxinaTimer = setTimeout(() => { faxinaTimer = null; varrerPalavras().catch(err); }, atrasoMs);
+  if (faxinaTimer.unref) faxinaTimer.unref();
+}
+
 async function varrerPalavras() {
   // espera o ghStateLoad terminar: ele zera o cache do antiflood ao final, e sem
   // isso a faxina escrevia a posicao num objeto morto (o progresso se perdia)
@@ -2036,6 +2062,7 @@ client.on('interactionCreate', async (i) => {
       const st = lerPalavrasBloqueadas();
       const r = adicionarPalavras(st, termos, { por: i.user.id });
       salvarPalavras(st);
+      if (r.adicionadas.length) agendarFaxina(); // palavra nova: limpa o historico dela
       const total = Object.keys(st.palavras).length;
       await i.reply({
         content: [
