@@ -65,13 +65,19 @@ fugir do filtro:
 - Até 300 palavras, 60 caracteres cada
 - Fica em `blacklist_palavras.json`, sincronizado no repo
 
-## Purga retroativa da lista
+## Faxina do histórico (bloqueio do dono + filtros antigos)
 
 Quando o bot liga, ele varre o histórico dos canais e apaga **o que já estava lá**
-e casa com a lista do dono (não só o que chega depois):
+(não só o que chega depois):
 
+- tudo que casa com a **lista do dono** (`.bloquear`);
+- e também tudo que os **filtros antigos que saíram do código** teriam apagado:
+  link/convite, link de CDN, textão (>300), asterisco, mensagem com `#`,
+  invisível, repetição interna (mesma palavra/emoji 4x+) e o conteúdo do filtro
+  de denúncia (menor-sexual, violencia-sexual, automutilacao, ameaca, extorsao,
+  dox, gore).
 - até 5.000 mensagens por canal a cada rodada; continua de onde parou na próxima
-- roda no máximo 1x por hora — e na hora, de novo, se a lista mudou
+- roda no máximo 1x por hora — e na hora, de novo, se a lista mudar
 - pula o dono, bots e as mensagens dos próprios painéis/logs do bot
 - o que foi apagado fica no `.antiflood` e no `antiflood_state.json`
 

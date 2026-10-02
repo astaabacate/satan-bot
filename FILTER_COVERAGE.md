@@ -11,6 +11,10 @@
 > repetição interna, asterisco, `#` e mensagem invisível. Sobrou só a lista do
 > dono (conteúdo) + o anti-flood (comportamento: repetir/floodar/emoji/msg curta),
 > e o anti-flood também só apaga — sem timeout nenhum.
+>
+> O que eles pegavam **ao vivo** não volta: a faxina do histórico (no boot) varre
+> os canais e apaga o que já estava salvo e casa com a lista do dono **ou** com
+> qualquer uma dessas regras antigas (incluindo o `classificarDenuncia`).
 
 Este documento descreve o que o filtro textual do bot cobre e o que ele **não** cobre. O filtro é apenas textual, não analisa imagem/vídeo/áudio.
 
