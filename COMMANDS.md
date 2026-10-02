@@ -36,9 +36,10 @@ GitHub, mesmo com `.logs off`.
 Antes existiam `.bloquear`, `.desbloquear`, `.bloqueios`. Agora é um único painel:
 
 - **`.bloquear`** abre um painel Components V2 com:
-  - Total de palavras e preview das 15 primeiras
-  - Botões: **Adicionar**, **Remover**, **Listar tudo**, **Testar frase**, **Atualizar**, **Fechar**
-  - **Adicionar/Remover/Testar** abrem modais (sem digitar no chat)
+  - o total e **a lista das palavras num menu** (25 por página, com ◀ ▶ se passar)
+  - **clique na palavra no menu → ela é removida na hora** (sem digitar nada)
+  - Botões: **Adicionar** (modal — só digitar quando for criar), **Testar frase**,
+    **Atualizar**, **Fechar**
   - Ação: apaga a mensagem que casa com a formação e registra (sem mute/ban/castigo)
 
 ## Palavras bloqueadas — casamento por FORMAÇÃO

@@ -1091,50 +1091,64 @@ function figPanel(st, fim) {
 }
 
 // ---------- painel unico do .bloquear (components V2) ----------
-function bloquearPanel() {
+// Tudo por CLIQUE: cada palavra aparece num menu de seleção e, clicando nela,
+// o bot remove na hora (o dono pediu: "podia ser tudo só clicando dentro").
+// Só o "Adicionar" abre modal, porque escrever palavra nova exige teclado.
+const PALAVRAS_POR_PAGINA = 25;
+function bloquearPanel(nota = '', pagina = 0) {
   const st = lerPalavrasBloqueadas();
   const lista = listarPalavras(st);
   const total = lista.length;
-  const preview = lista.slice(0, 15).map((p, i) => `${i + 1}. \`${p.termo}\`${p.usos ? ` (${p.usos}x)` : ''}`).join('\n') || '-# nenhuma palavra bloqueada ainda';
-  const body = [
-    `**Total:** ${total} palavra(s)`,
-    '',
-    preview,
-    total > 15 ? `\n-# ...e mais ${total - 15}` : '',
-    '',
-    '-# casa por FORMAÇÃO: o termo é o COMEÇO da palavra e pega as evasões (estu → estupro, stupro, st, stu).',
-    '-# termo curto (cu, cp) só casa a palavra inteira. pra não pegar "estudo", bloqueie `estupr`.',
-  ].filter(Boolean).join('\n');
-
-  return {
-    flags: 1 << 15,
-    components: [{
-      type: 17,
-      accent_color: 8912896,
+  const totalPags = Math.max(1, Math.ceil(total / PALAVRAS_POR_PAGINA));
+  const pag = Math.min(Math.max(0, Number(pagina) || 0), totalPags - 1);
+  const coms = [
+    { type: 10, content: '# 🔒 palavras bloqueadas\n-# clique na palavra pra desbloquear na hora — sem digitar nada' },
+  ];
+  if (total) {
+    coms.push({
+      type: 1,
+      components: [{
+        type: 3,
+        custom_id: `bloq_sel:${pag}`,
+        placeholder: 'escolha a palavra pra remover',
+        options: lista.slice(pag * PALAVRAS_POR_PAGINA, pag * PALAVRAS_POR_PAGINA + PALAVRAS_POR_PAGINA).map((p) => ({
+          label: String(p.termo).slice(0, 100),
+          value: p.chave,
+          description: `${p.usos || 0} uso(s)`.slice(0, 100),
+        })),
+      }],
+    });
+  }
+  if (totalPags > 1) {
+    coms.push({
+      type: 1,
       components: [
-        { type: 10, content: '# Painel de bloqueio\n-# gerencie as palavras que o bot apaga' },
-        { type: 14, spacing: 1, divider: true },
-        { type: 10, content: body },
-        { type: 14, spacing: 1, divider: true },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 3, label: 'Adicionar', custom_id: 'bloq_add' },
-            { type: 2, style: 4, label: 'Remover', custom_id: 'bloq_remove' },
-            { type: 2, style: 2, label: 'Listar tudo', custom_id: 'bloq_list' },
-          ]
-        },
-        {
-          type: 1,
-          components: [
-            { type: 2, style: 2, label: 'Testar frase', custom_id: 'bloq_test' },
-            { type: 2, style: 2, label: 'Atualizar', custom_id: 'bloq_refresh' },
-            { type: 2, style: 2, label: 'Fechar', custom_id: 'bloq_close' },
-          ]
-        },
+        { type: 2, style: 2, label: '◀', custom_id: `bloq_pg:${Math.max(0, pag - 1)}`, disabled: pag <= 0 },
+        { type: 2, style: 2, label: `página ${pag + 1}/${totalPags}`, custom_id: 'bloq_pg_atual', disabled: true },
+        { type: 2, style: 2, label: '▶', custom_id: `bloq_pg:${Math.min(totalPags - 1, pag + 1)}`, disabled: pag >= totalPags - 1 },
       ],
-    }],
-  };
+    });
+  }
+  coms.push({ type: 14, spacing: 1, divider: true });
+  coms.push({
+    type: 10,
+    content: [
+      `**${total}** palavra(s) bloqueada(s)${nota ? ` • ${nota}` : ''}`,
+      '-# casa por FORMAÇÃO: o termo é o COMEÇO da palavra (estupr → estupro, stupro, estuprar; deixa estudo em paz).',
+      '-# termo de 2 letras (cu, cp) só casa a palavra inteira.',
+    ].join('\n'),
+  });
+  coms.push({ type: 14, spacing: 1, divider: true });
+  coms.push({
+    type: 1,
+    components: [
+      { type: 2, style: 3, label: 'Adicionar', custom_id: 'bloq_add' },
+      { type: 2, style: 2, label: 'Testar frase', custom_id: 'bloq_test' },
+      { type: 2, style: 2, label: 'Atualizar', custom_id: 'bloq_refresh' },
+      { type: 2, style: 4, label: 'Fechar', custom_id: 'bloq_close' },
+    ],
+  });
+  return { flags: 1 << 15, components: [{ type: 17, accent_color: 8912896, components: coms }] };
 }
 
 client.on('messageCreate', async (m) => {
@@ -1918,7 +1932,7 @@ client.on('interactionCreate', async (i) => {
             custom_id: 'palavras_input',
             label: 'Palavras (separe por vírgula)',
             style: 2,
-            placeholder: 'ex: cu, bosta, vai se fuder',
+            placeholder: 'ex: estupr, molest, pedo — o começo da palavra já basta',
             required: true,
             max_length: 1000,
           }]
@@ -1926,23 +1940,11 @@ client.on('interactionCreate', async (i) => {
       }).catch((e) => err(e));
       return;
     }
-    if (id === 'bloq_remove') {
-      await i.showModal({
-        custom_id: 'bloq_modal_remove',
-        title: 'Remover palavras',
-        components: [{
-          type: 1,
-          components: [{
-            type: 4,
-            custom_id: 'palavras_input',
-            label: 'Palavras para remover',
-            style: 2,
-            placeholder: 'ex: cu, bosta',
-            required: true,
-            max_length: 1000,
-          }]
-        }]
-      }).catch((e) => err(e));
+    // paginação do menu (mostra 25 palavras por página)
+    if (id.startsWith('bloq_pg:')) {
+      await i.deferUpdate().catch(() => {});
+      const pag = Number(id.split(':')[1]) || 0;
+      await whEdit(i.channel, i.message.id, bloquearPanel('', pag)).catch(() => {});
       return;
     }
     if (id === 'bloq_test') {
@@ -1964,27 +1966,6 @@ client.on('interactionCreate', async (i) => {
       }).catch((e) => err(e));
       return;
     }
-    if (id === 'bloq_list') {
-      await i.deferUpdate().catch(() => {});
-      const st = lerPalavrasBloqueadas();
-      const lista = listarPalavras(st);
-      if (!lista.length) {
-        await whSend(i.channel, 'nenhuma palavra bloqueada ainda.').catch(() => {});
-        return;
-      }
-      const linhas = lista.map((p, idx) => `${idx + 1}. \`${p.termo}\`${p.usos ? ` (${p.usos}x)` : ''}`);
-      let atual = '';
-      const paginas = [];
-      for (const l of linhas) {
-        if (atual.length + l.length + 1 > 1800) { paginas.push(atual); atual = ''; }
-        atual += (atual ? '\n' : '') + l;
-      }
-      if (atual) paginas.push(atual);
-      for (const [idx, pg] of paginas.entries()) {
-        await whSend(i.channel, `**${lista.length} palavra(s) bloqueada(s)**${paginas.length > 1 ? ` (${idx + 1}/${paginas.length})` : ''}:\n${pg}`).catch(() => {});
-      }
-      return;
-    }
     if (id === 'bloq_refresh') {
       await i.deferUpdate().catch(() => {});
       await whEdit(i.channel, i.message.id, bloquearPanel()).catch(() => {});
@@ -1995,6 +1976,33 @@ client.on('interactionCreate', async (i) => {
       await i.message.delete().catch(() => {});
       return;
     }
+    // qualquer botão do painel antigo ("Remover", "Listar tudo"...): só
+    // re-renderiza no formato novo, pra ninguém ficar preso no modelo velho
+    await i.deferUpdate().catch(() => {});
+    await whEdit(i.channel, i.message.id, bloquearPanel()).catch(() => {});
+    return;
+  }
+
+  // menu do painel: clicou na palavra -> remove na hora (sem modal, sem digitar)
+  if (i.isStringSelectMenu && i.isStringSelectMenu() && String(i.customId || '').startsWith('bloq_sel')) {
+    if (i.user.id !== OWNER_ID) {
+      await i.reply({ content: 'só o dono usa isso.', ephemeral: true }).catch(() => {});
+      return;
+    }
+    const pag = Number(String(i.customId).split(':')[1]) || 0;
+    const chaveSel = (i.values && i.values[0]) || '';
+    const st = lerPalavrasBloqueadas();
+    const alvo = (st.palavras && st.palavras[chaveSel]) || null;
+    const termo = alvo ? alvo.termo : chaveSel;
+    const r = removerPalavras(st, [chaveSel]);
+    if (r.removidas.length) salvarPalavras(st);
+    log('BLOQ_DEL_CLIQUE', { por: i.user.id, termo, removida: r.removidas.length > 0 });
+    await i.deferUpdate().catch(() => {});
+    const restou = Object.keys(st.palavras || {}).length;
+    const pagFinal = Math.min(pag, Math.max(0, Math.ceil(restou / PALAVRAS_POR_PAGINA) - 1));
+    const nota = r.removidas.length ? `🗑️ removida: \`${termo}\`` : `⚠️ não achei \`${termo}\``;
+    await whEdit(i.channel, i.message.id, bloquearPanel(nota, pagFinal)).catch(() => {});
+    return;
   }
 
   // modals do bloquear
@@ -2025,19 +2033,15 @@ client.on('interactionCreate', async (i) => {
         ].filter(Boolean).join('\n'),
         ephemeral: true
       }).catch(() => {});
-      // atualiza painel original se possível
-      try {
-        const ch = i.channel;
-        const msgId = i.message && i.message.id ? null : null; // modal não tem message id do painel, então tenta editar última?
-        // tenta atualizar o painel mais recente no canal
-        const msgs = await ch.messages.fetch({ limit: 20 }).catch(() => null);
-        if (msgs) {
-          const painel = [...msgs.values()].find(m => m.webhookId && m.content === '' && m.components && m.components.length);
-          // fallback: apenas manda painel novo
-        }
-      } catch {}
-      // manda painel atualizado como follow-up
-      await whSend(i.channel, bloquearPanel()).catch(() => {});
+      // atualiza o painel NO LUGAR (o modal guarda o link da mensagem); se não
+      // der, manda um painel novo — antes ficava acumulando painel no canal
+      const notaAdd = r.adicionadas.length ? `➕ ${r.adicionadas.length} nova(s)` : 'nada novo';
+      if (i.message && i.message.id) {
+        const okEdit = await whEdit(i.channel, i.message.id, bloquearPanel(notaAdd)).then(() => true).catch(() => false);
+        if (!okEdit) await whSend(i.channel, bloquearPanel(notaAdd)).catch(() => {});
+      } else {
+        await whSend(i.channel, bloquearPanel(notaAdd)).catch(() => {});
+      }
       log('BLOQ_ADD', { por: i.user.id, termos: r.adicionadas, total });
       return;
     }
@@ -2060,7 +2064,13 @@ client.on('interactionCreate', async (i) => {
         ].filter(Boolean).join('\n'),
         ephemeral: true
       }).catch(() => {});
-      await whSend(i.channel, bloquearPanel()).catch(() => {});
+      const notaDel = r.removidas.length ? `🗑️ ${r.removidas.length} removida(s)` : 'nada removido';
+      if (i.message && i.message.id) {
+        const okEdit = await whEdit(i.channel, i.message.id, bloquearPanel(notaDel)).then(() => true).catch(() => false);
+        if (!okEdit) await whSend(i.channel, bloquearPanel(notaDel)).catch(() => {});
+      } else {
+        await whSend(i.channel, bloquearPanel(notaDel)).catch(() => {});
+      }
       log('BLOQ_DEL', { por: i.user.id, termos: r.removidas, total });
       return;
     }
