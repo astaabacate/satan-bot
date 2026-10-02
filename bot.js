@@ -511,6 +511,8 @@ function estadoAntiflood() {
     palavrasVarreduraEm: Number(st.palavrasVarreduraEm) || 0,
     palavrasHash: typeof st.palavrasHash === 'string' ? st.palavrasHash : '',
     purga: st.purga && typeof st.purga === 'object' ? st.purga : {},
+    // resumo da ultima faxina (fica no repo: da pra ver que rodou e o que apagou)
+    faxina: st.faxina && typeof st.faxina === 'object' ? st.faxina : null,
   };
   return antifloodMem;
 }
@@ -1348,7 +1350,7 @@ client.on('messageCreate', async (m) => {
         '**anti-flood**',
         `hoje: **${hoje.deteccoes}** detecções • **${hoje.apagadas}** mensagens apagadas • **${hoje.falhas}** falhas de exclusão`,
         `autores monitorados agora: **${Object.keys(stAF.rep).length}**`,
-        `-# faxina do histórico: ${stAF.palavrasVarreduraEm ? new Date(stAF.palavrasVarreduraEm).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : 'ainda nao rodou'}`,
+        `-# faxina do histórico: ${stAF.faxina ? `${stAF.faxina.canais || 0} canal(is), ${stAF.faxina.apagadas || 0} apagada(s) • ${String(stAF.faxina.em || '').slice(0, 16).replace('T', ' ')} UTC` : 'ainda nao rodou'}`,
         `permissões neste canal: ${falta.length ? '⚠️ faltando ' + falta.join(', ') : '✅ ok'}`,
         '',
         ultimas.length ? '**últimas ações:**' : '-# nenhuma ação registrada ainda',
@@ -1749,10 +1751,14 @@ function motivosLegado(x, cfg) {
 const PURGA_PAGINAS = 50; // 50 x 100 msgs por canal a cada rodada
 const PURGA_INTERVALO_MS = 60 * 60 * 1000;
 async function varrerPalavras() {
+  // espera o ghStateLoad terminar: ele zera o cache do antiflood ao final, e sem
+  // isso a faxina escrevia a posicao num objeto morto (o progresso se perdia)
+  await ghStatePronto.catch(() => {});
   const st = lerPalavrasBloqueadas();
   const cfgLegado = readJsonSafe(ANTIFLOOD_CFG, ANTIFLOOD_DEFAULT);
+  const palavras = (st && st.palavras) || {};
   const stAF = estadoAntiflood();
-  const hash = Object.keys(st.palavras).sort().join('|') + '|legado-v1';
+  const hash = Object.keys(palavras).sort().join('|') + '|legado-v1';
   const agora = Date.now();
   if (stAF.palavrasHash === hash && agora - (stAF.palavrasVarreduraEm || 0) < PURGA_INTERVALO_MS) return;
   if (stAF.palavrasHash !== hash) stAF.purga = {}; // lista mudou: recomeça do topo
@@ -1761,8 +1767,14 @@ async function varrerPalavras() {
   salvarAntiflood(true);
   const antigo = stAF.purga && typeof stAF.purga === 'object' ? stAF.purga : {};
   const purgaNova = {};
-  let total = 0, falhas = 0;
+  let total = 0, falhas = 0, canais = 0, paginas = 0;
   const porTermo = {};
+  const salvarResumo = () => {
+    const vivo = estadoAntiflood();
+    vivo.purga = purgaNova;
+    vivo.faxina = { em: new Date().toISOString(), canais, paginas, apagadas: total, falhas, motivos: porTermo, iniciadaEm: new Date(agora).toISOString() };
+    salvarAntiflood(true);
+  };
   for (const gid of INFERNO_GUILDS) {
     const g = client.guilds.cache.get(gid);
     if (!g) continue;
@@ -1774,6 +1786,7 @@ async function varrerPalavras() {
       for (let pag = 0; pag < PURGA_PAGINAS; pag++) {
         const lote = await ch.messages.fetch(antes ? { limit: 100, before: antes } : { limit: 100 }).catch(() => null);
         if (!lote || !lote.size) { acabou = true; break; }
+        paginas += 1;
         const alvos = new Map();
         for (const x of lote.values()) {
           if (!x.deletable || x.author.id === OWNER_ID) continue; // dono e imune
@@ -1808,13 +1821,14 @@ async function varrerPalavras() {
         if (lote.size < 100) { acabou = true; break; }
       }
       purgaNova[ch.id] = acabou ? 'fim' : antes; // guarda a posicao pra continuar no proximo boot
-      stAF.purga = purgaNova;
-      salvarAntiflood(true);
+      canais += 1;
+      salvarResumo(); // grava no estado VIVO (nao numa copia)
     }
   }
+  salvarResumo();
+  log('PURGA_PALAVRAS', { apagadas: total, falhas, canais, paginas, motivos: porTermo });
   if (total || falhas) {
     const termos = Object.entries(porTermo).map(([t, n]) => `${t} (${n})`).join(', ');
-    log('PURGA_PALAVRAS', { apagadas: total, falhas, motivos: porTermo });
     logEvento('🧹 Faxina do histórico (bloqueio + filtros antigos)', [
       `**Mensagens antigas apagadas:** ${total}${falhas ? ` • **falhas:** ${falhas}` : ''}`,
       termos ? `**Motivos:** ${corta(termos, 300)}` : '',
