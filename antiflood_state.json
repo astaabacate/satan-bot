@@ -15,6 +15,11 @@
         "t": [
           1790973894248
         ]
+      },
+      "1n4hbtu:14": {
+        "t": [
+          1790973909581
+        ]
       }
     },
     "1554241546981871763": {
@@ -96,6 +101,11 @@
         "t": [
           1790973900325
         ]
+      },
+      "9y5tp:28": {
+        "t": [
+          1790973912722
+        ]
       }
     },
     "1555547743718481971": {
@@ -171,6 +181,22 @@
     }
   },
   "acoes": [
+    {
+      "ts": "2026-10-02T20:45:09.930Z",
+      "canal": "1554323715892715575",
+      "guild": "1554284137261830184",
+      "autor": "1539465305326227477",
+      "motivo": "bloqueio:pedo",
+      "apagou": false,
+      "erro": "DiscordAPIError[10008]: Unknown Message",
+      "autorBot": true,
+      "webhook": true,
+      "canalNome": "bump",
+      "posAutor": 2,
+      "posBot": 2,
+      "curouPal": true,
+      "termo": "pedo"
+    },
     {
       "ts": "2026-10-02T20:35:10.707Z",
       "canal": "1555665375109320859",
@@ -829,10 +855,10 @@
   ],
   "stats": {
     "2026-10-02": {
-      "deteccoes": 66,
+      "deteccoes": 67,
       "apagadas": 58,
       "castigos": 0,
-      "falhas": 18
+      "falhas": 19
     }
   },
   "palavrasVarreduraEm": 1790969983828,
