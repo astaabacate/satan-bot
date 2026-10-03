@@ -231,9 +231,32 @@
           1791014659812
         ]
       }
+    },
+    "1509221573679120565": {
+      "tsg01o:8": {
+        "t": [
+          1791014694332
+        ]
+      }
     }
   },
   "acoes": [
+    {
+      "ts": "2026-10-03T08:04:50.609Z",
+      "canal": "1554323715892715575",
+      "guild": "1554284137261830184",
+      "autor": "1539465305326227477",
+      "motivo": "bloqueio:moIesta",
+      "apagou": false,
+      "erro": "DiscordAPIError[10008]: Unknown Message",
+      "autorBot": true,
+      "webhook": true,
+      "canalNome": "bump",
+      "posAutor": 2,
+      "posBot": 2,
+      "curouPal": true,
+      "termo": "moIesta"
+    },
     {
       "ts": "2026-10-03T08:04:47.410Z",
       "canal": "1555852813756534796",
@@ -2352,16 +2375,6 @@
       "apagou": true,
       "apagadas": 1,
       "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-02T20:49:09.551Z",
-      "canal": "1555680525547479100",
-      "guild": "1554284137261830184",
-      "autor": "1554165512416665714",
-      "motivo": "bloqueio:negr",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
     }
   ],
   "stats": {
@@ -2372,10 +2385,10 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 159,
+      "deteccoes": 160,
       "apagadas": 151,
       "castigos": 0,
-      "falhas": 24
+      "falhas": 25
     }
   },
   "palavrasVarreduraEm": 1791013153823,
