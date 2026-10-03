@@ -175,6 +175,16 @@
   },
   "acoes": [
     {
+      "ts": "2026-10-03T05:16:16.763Z",
+      "canal": "1555803274320289833",
+      "guild": "1554284137261830184",
+      "autor": "1550100261731704866",
+      "motivo": "bloqueio:cria",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
       "ts": "2026-10-03T05:08:54.728Z",
       "canal": "1555803274320289833",
       "guild": "1554284137261830184",
@@ -2233,16 +2243,6 @@
       "apagou": true,
       "apagadas": 1,
       "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-02T19:38:26.035Z",
-      "canal": "1555656021630910484",
-      "guild": "1554284137261830184",
-      "autor": "1555547743718481971",
-      "motivo": "repeticao-grudada:ks",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "texto"
     }
   ],
   "stats": {
@@ -2253,8 +2253,8 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 108,
-      "apagadas": 114,
+      "deteccoes": 109,
+      "apagadas": 115,
       "castigos": 0,
       "falhas": 8
     }
