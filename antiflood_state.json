@@ -209,6 +209,21 @@
   },
   "acoes": [
     {
+      "ts": "2026-10-03T08:10:33.844Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1539465305326227477",
+      "motivo": "repetiu-7x",
+      "apagou": false,
+      "erro": "DiscordAPIError[10008]: Unknown Message",
+      "autorBot": true,
+      "webhook": true,
+      "canalNome": "confessionario",
+      "posAutor": 2,
+      "posBot": 2,
+      "curou": true
+    },
+    {
       "ts": "2026-10-03T08:10:21.493Z",
       "canal": "1555852813756534796",
       "guild": "1554284137261830184",
@@ -2366,16 +2381,6 @@
       "posBot": 2,
       "curouPal": true,
       "termo": "molest"
-    },
-    {
-      "ts": "2026-10-03T01:44:20.120Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1553446124679860377",
-      "motivo": "bloqueio:estr",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
     }
   ],
   "stats": {
@@ -2386,10 +2391,10 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 218,
+      "deteccoes": 219,
       "apagadas": 202,
       "castigos": 0,
-      "falhas": 32
+      "falhas": 33
     }
   },
   "palavrasVarreduraEm": 1791014987109,
