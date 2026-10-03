@@ -1,16 +1,6 @@
 {
   "rep": {
     "1474872958022324325": {
-      "1v05krc:18": {
-        "t": [
-          1791007038911
-        ]
-      },
-      "p1qg9g:18": {
-        "t": [
-          1791007047803
-        ]
-      },
       "15dx0fv:12": {
         "t": [
           1791007132266
@@ -35,12 +25,10 @@
         "t": [
           1791007282676
         ]
-      }
-    },
-    "1531162005262831696": {
-      "1v05krc:18": {
+      },
+      "10acmyu:19": {
         "t": [
-          1791007044616
+          1791007389134
         ]
       }
     },
@@ -107,31 +95,7 @@
         ]
       }
     },
-    "1555819479336882206": {
-      "1g2gm0k:5": {
-        "t": [
-          1791007035773
-        ]
-      }
-    },
-    "1512305852973977634": {
-      "1g2gm0k:5": {
-        "t": [
-          1791007045512
-        ]
-      },
-      "73sam8:19": {
-        "t": [
-          1791007056289
-        ]
-      }
-    },
     "1555714642263674940": {
-      "a1fmxf:2": {
-        "t": [
-          1791007061758
-        ]
-      },
       "1umtwvw:2": {
         "t": [
           1791007254382
@@ -246,9 +210,68 @@
           1791007312823
         ]
       }
+    },
+    "1553446124679860377": {
+      "10acmyu:19": {
+        "t": [
+          1791007358774
+        ]
+      }
+    },
+    "1531162005262831696": {
+      "10acmyu:19": {
+        "t": [
+          1791007382199
+        ]
+      }
     }
   },
   "acoes": [
+    {
+      "ts": "2026-10-03T06:02:39.078Z",
+      "canal": "1555818587007230033",
+      "guild": "1554284137261830184",
+      "autor": "1535519825525219339",
+      "motivo": "repetiu-3x",
+      "apagou": false,
+      "erro": "DiscordjsError [ChannelNotCached]: Could not find the channel where this message came from in the cache!",
+      "autorBot": false,
+      "webhook": false,
+      "canalNome": null,
+      "posAutor": 0,
+      "posBot": 2,
+      "curou": false
+    },
+    {
+      "ts": "2026-10-03T06:02:38.719Z",
+      "canal": "1555818587007230033",
+      "guild": "1554284137261830184",
+      "autor": "1535519825525219339",
+      "motivo": "repetiu-6x+flood>5em6s",
+      "apagou": false,
+      "erro": "DiscordjsError [ChannelNotCached]: Could not find the channel where this message came from in the cache!",
+      "autorBot": false,
+      "webhook": false,
+      "canalNome": null,
+      "posAutor": 0,
+      "posBot": 2,
+      "curou": false
+    },
+    {
+      "ts": "2026-10-03T06:02:33.757Z",
+      "canal": "1555818587007230033",
+      "guild": "1554284137261830184",
+      "autor": "1535519825525219339",
+      "motivo": "repetiu-10x+penalidade+flood>5em6s",
+      "apagou": false,
+      "erro": "DiscordjsError [ChannelNotCached]: Could not find the channel where this message came from in the cache!",
+      "autorBot": false,
+      "webhook": false,
+      "canalNome": null,
+      "posAutor": 0,
+      "posBot": 2,
+      "curou": false
+    },
     {
       "ts": "2026-10-03T06:02:33.512Z",
       "canal": "1555818587007230033",
@@ -2331,36 +2354,6 @@
       "apagou": true,
       "apagadas": 1,
       "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-02T19:55:06.812Z",
-      "canal": "1555665375109320859",
-      "guild": "1554284137261830184",
-      "autor": "1553551702458761217",
-      "motivo": "bloqueio:macac",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-02T19:52:29.019Z",
-      "canal": "1555665375109320859",
-      "guild": "1554284137261830184",
-      "autor": "1545033031826415682",
-      "motivo": "repeticao-grudada:ka",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-02T19:51:54.523Z",
-      "canal": "1555665375109320859",
-      "guild": "1554284137261830184",
-      "autor": "1545033031826415682",
-      "motivo": "repeticao-grudada:ka",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "texto"
     }
   ],
   "stats": {
@@ -2371,10 +2364,10 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 129,
+      "deteccoes": 132,
       "apagadas": 126,
       "castigos": 0,
-      "falhas": 17
+      "falhas": 20
     }
   },
   "palavrasVarreduraEm": 1791004057610,
