@@ -102,6 +102,16 @@
   },
   "acoes": [
     {
+      "ts": "2026-10-03T03:59:30.145Z",
+      "canal": "1555787922597220372",
+      "guild": "1554284137261830184",
+      "autor": "1554241546981871763",
+      "motivo": "bloqueio:cria",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
       "ts": "2026-10-03T03:43:44.620Z",
       "canal": "1555772571306430484",
       "guild": "1554284137261830184",
@@ -2159,16 +2169,6 @@
       "motivo": "bloqueio:abus",
       "apagou": false,
       "erro": "delete falhou"
-    },
-    {
-      "ts": "2026-10-02T19:38:10.647Z",
-      "canal": "1554323715892715575",
-      "guild": "1554284137261830184",
-      "autor": "1539465305326227477",
-      "motivo": "bloqueio:cria",
-      "apagou": false,
-      "apagadas": 0,
-      "tipo": "palavra"
     }
   ],
   "stats": {
@@ -2179,8 +2179,8 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 105,
-      "apagadas": 111,
+      "deteccoes": 106,
+      "apagadas": 112,
       "castigos": 0,
       "falhas": 8
     }
