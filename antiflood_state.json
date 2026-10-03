@@ -35,6 +35,11 @@
         "t": [
           1791015294451
         ]
+      },
+      "g407wo:38": {
+        "t": [
+          1791015366761
+        ]
       }
     },
     "1555714642263674940": {
@@ -144,6 +149,32 @@
     }
   },
   "acoes": [
+    {
+      "ts": "2026-10-03T08:16:06.973Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1548679466815983717",
+      "motivo": "repeticao-interna:e:🩷x7",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "texto"
+    },
+    {
+      "ts": "2026-10-03T08:16:05.810Z",
+      "canal": "1554323715892715575",
+      "guild": "1554284137261830184",
+      "autor": "1539465305326227477",
+      "motivo": "bloqueio:kria",
+      "apagou": false,
+      "erro": "DiscordAPIError[10008]: Unknown Message",
+      "autorBot": true,
+      "webhook": true,
+      "canalNome": "bump",
+      "posAutor": 2,
+      "posBot": 2,
+      "curouPal": true,
+      "termo": "kria"
+    },
     {
       "ts": "2026-10-03T08:15:38.946Z",
       "canal": "1555852813756534796",
@@ -2281,36 +2312,6 @@
       "posAutor": 0,
       "posBot": 2,
       "curou": true
-    },
-    {
-      "ts": "2026-10-03T01:58:19.407Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1553446124679860377",
-      "motivo": "repetiu-7x",
-      "apagou": false,
-      "erro": "DiscordAPIError[10008]: Unknown Message",
-      "autorBot": false,
-      "webhook": false,
-      "canalNome": "confessionario",
-      "posAutor": 0,
-      "posBot": 2,
-      "curou": true
-    },
-    {
-      "ts": "2026-10-03T01:58:05.775Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1553446124679860377",
-      "motivo": "repetiu-6x",
-      "apagou": false,
-      "erro": "DiscordAPIError[10008]: Unknown Message",
-      "autorBot": false,
-      "webhook": false,
-      "canalNome": "confessionario",
-      "posAutor": 0,
-      "posBot": 2,
-      "curou": true
     }
   ],
   "stats": {
@@ -2321,10 +2322,10 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 232,
-      "apagadas": 213,
+      "deteccoes": 234,
+      "apagadas": 214,
       "castigos": 0,
-      "falhas": 35
+      "falhas": 36
     }
   },
   "palavrasVarreduraEm": 1791014987109,
