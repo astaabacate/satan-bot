@@ -343,6 +343,16 @@
   },
   "acoes": [
     {
+      "ts": "2026-10-03T02:35:39.606Z",
+      "canal": "1555757220174626866",
+      "guild": "1554284137261830184",
+      "autor": "1555003801641943061",
+      "motivo": "bloqueio:negr",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
       "ts": "2026-10-03T02:31:47.923Z",
       "canal": "1555757220174626866",
       "guild": "1554284137261830184",
@@ -2188,8 +2198,8 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 63,
-      "apagadas": 70,
+      "deteccoes": 64,
+      "apagadas": 71,
       "castigos": 0,
       "falhas": 7
     }
