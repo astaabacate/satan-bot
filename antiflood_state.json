@@ -42,19 +42,9 @@
         "t": [
           1791007044616
         ]
-      },
-      "1te7ifg:15": {
-        "t": [
-          1791007023144
-        ]
       }
     },
     "1527411059051335941": {
-      "14zzzpi:17": {
-        "t": [
-          1791007165700
-        ]
-      },
       "18x9yz7:10": {
         "t": [
           1791007195721
@@ -62,7 +52,7 @@
       },
       "dh1hsd:3": {
         "t": [
-          1791007198360
+          1791007324911
         ]
       },
       "t9i23v:4": {
@@ -110,12 +100,10 @@
         "t": [
           1791007285378
         ]
-      }
-    },
-    "1541597685096906825": {
-      "1g2gm0k:5": {
+      },
+      "1u047u2:3": {
         "t": [
-          1791006996694
+          1791007305375
         ]
       }
     },
@@ -158,6 +146,16 @@
         "t": [
           1791007279275
         ]
+      },
+      "pc1717:2": {
+        "t": [
+          1791007301448
+        ]
+      },
+      "wikdmz:3": {
+        "t": [
+          1791007333187
+        ]
       }
     },
     "1535519825525219339": {
@@ -165,16 +163,6 @@
         "t": [
           1791007207479,
           1791007259004
-        ]
-      },
-      "1g4kglg:35": {
-        "t": [
-          1791007244354
-        ]
-      },
-      "o63jed:39": {
-        "t": [
-          1791007247801
         ]
       },
       "1t265b2:31": {
@@ -207,7 +195,10 @@
           1791007280263,
           1791007281017,
           1791007291242,
-          1791007291924
+          1791007291924,
+          1791007293161,
+          1791007294178,
+          1791007294866
         ]
       },
       "ftxigl:1033": {
@@ -227,7 +218,18 @@
       },
       "i269pv:43": {
         "t": [
-          1791007292509
+          1791007292509,
+          1791007293662
+        ]
+      },
+      "kcxye1:1693": {
+        "t": [
+          1791007301013
+        ]
+      },
+      "yp0op5:28": {
+        "t": [
+          1791007317345
         ]
       }
     },
@@ -237,9 +239,91 @@
           1791007160903
         ]
       }
+    },
+    "1554225772775080068": {
+      "1g2gm0k:5": {
+        "t": [
+          1791007312823
+        ]
+      }
     }
   },
   "acoes": [
+    {
+      "ts": "2026-10-03T06:02:28.580Z",
+      "canal": "1555818587007230033",
+      "guild": "1554284137261830184",
+      "autor": "1535519825525219339",
+      "motivo": "repetiu-5x",
+      "apagou": false,
+      "erro": "DiscordjsError [ChannelNotCached]: Could not find the channel where this message came from in the cache!",
+      "autorBot": false,
+      "webhook": false,
+      "canalNome": null,
+      "posAutor": 0,
+      "posBot": 2,
+      "curou": false
+    },
+    {
+      "ts": "2026-10-03T06:02:28.469Z",
+      "canal": "1555818587007230033",
+      "guild": "1554284137261830184",
+      "autor": "1535519825525219339",
+      "motivo": "repetiu-4x",
+      "apagou": false,
+      "erro": "DiscordjsError [ChannelNotCached]: Could not find the channel where this message came from in the cache!",
+      "autorBot": false,
+      "webhook": false,
+      "canalNome": null,
+      "posAutor": 0,
+      "posBot": 2,
+      "curou": false
+    },
+    {
+      "ts": "2026-10-03T06:02:23.643Z",
+      "canal": "1555818587007230033",
+      "guild": "1554284137261830184",
+      "autor": "1535519825525219339",
+      "motivo": "chars>300+repeticao-interna:w:15274105905135941x77+penalidade",
+      "apagou": false,
+      "erro": "DiscordAPIError[10008]: Unknown Message",
+      "autorBot": false,
+      "webhook": false,
+      "canalNome": "confessionario",
+      "posAutor": 0,
+      "posBot": 2,
+      "curou": true
+    },
+    {
+      "ts": "2026-10-03T06:02:10.283Z",
+      "canal": "1555818587007230033",
+      "guild": "1554284137261830184",
+      "autor": "1535519825525219339",
+      "motivo": "chars>300+repeticao-interna:w:15274105905135941x47+penalidade+flood>5em6s",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "texto"
+    },
+    {
+      "ts": "2026-10-03T06:01:48.370Z",
+      "canal": "1555818587007230033",
+      "guild": "1554284137261830184",
+      "autor": "1535519825525219339",
+      "motivo": "penalidade",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "texto"
+    },
+    {
+      "ts": "2026-10-03T06:01:36.776Z",
+      "canal": "1555818587007230033",
+      "guild": "1554284137261830184",
+      "autor": "1535519825525219339",
+      "motivo": "chars>300+repeticao-interna:w:15274105905135941x61+penalidade",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "texto"
+    },
     {
       "ts": "2026-10-03T06:00:53.328Z",
       "canal": "1555818587007230033",
@@ -2262,66 +2346,6 @@
       "apagou": true,
       "apagadas": 2,
       "tipo": "figurinha"
-    },
-    {
-      "ts": "2026-10-02T19:49:31.035Z",
-      "canal": "1555665375109320859",
-      "guild": "1554284137261830184",
-      "autor": "1554165512416665714",
-      "motivo": "bloqueio:estr",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-02T19:49:24.352Z",
-      "canal": "1555665375109320859",
-      "guild": "1554284137261830184",
-      "autor": "1554165512416665714",
-      "motivo": "bloqueio:estr",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-02T19:47:53.655Z",
-      "canal": "1555665375109320859",
-      "guild": "1554284137261830184",
-      "autor": "1545033031826415682",
-      "motivo": "repeticao-grudada:ka",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-02T19:46:27.827Z",
-      "canal": "1555665375109320859",
-      "guild": "1554284137261830184",
-      "autor": "1545033031826415682",
-      "motivo": "repeticao-grudada:ka",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-02T19:45:42.543Z",
-      "canal": "1555665375109320859",
-      "guild": "1554284137261830184",
-      "autor": "1554273544571981846",
-      "motivo": "repetiu-2x",
-      "apagou": true,
-      "apagadas": 2,
-      "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-02T19:45:33.427Z",
-      "canal": "1555665375109320859",
-      "guild": "1554284137261830184",
-      "autor": "1555547743718481971",
-      "motivo": "repeticao-grudada:ks",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "texto"
     }
   ],
   "stats": {
@@ -2332,10 +2356,10 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 120,
-      "apagadas": 123,
+      "deteccoes": 126,
+      "apagadas": 126,
       "castigos": 0,
-      "falhas": 11
+      "falhas": 14
     }
   },
   "palavrasVarreduraEm": 1791004057610,
