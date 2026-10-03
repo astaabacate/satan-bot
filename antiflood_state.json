@@ -97,14 +97,14 @@
         "t": [
           1791014640339
         ]
+      },
+      "1aw7pe7:12": {
+        "t": [
+          1791014689390
+        ]
       }
     },
     "1515080176927641771": {
-      "99pou8:34": {
-        "t": [
-          1791014491470
-        ]
-      },
       "11td83f:34": {
         "t": [
           1791014512983
@@ -159,6 +159,11 @@
         "t": [
           1791014679563
         ]
+      },
+      "1t6ekum:4": {
+        "t": [
+          1791014684691
+        ]
       }
     },
     "1555384415356461129": {
@@ -204,11 +209,6 @@
       }
     },
     "1553446124679860377": {
-      "bm93g3:8": {
-        "t": [
-          1791014386718
-        ]
-      },
       "10acmyu:19": {
         "t": [
           1791014620657
@@ -234,6 +234,32 @@
     }
   },
   "acoes": [
+    {
+      "ts": "2026-10-03T08:04:47.410Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553551702458761217",
+      "motivo": "bloqueio:molest",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:04:45.714Z",
+      "canal": "1554323715892715575",
+      "guild": "1554284137261830184",
+      "autor": "1539465305326227477",
+      "motivo": "bloqueio:moIestar",
+      "apagou": false,
+      "erro": "DiscordAPIError[10008]: Unknown Message",
+      "autorBot": true,
+      "webhook": true,
+      "canalNome": "bump",
+      "posAutor": 2,
+      "posBot": 2,
+      "curouPal": true,
+      "termo": "moIestar"
+    },
     {
       "ts": "2026-10-03T08:04:42.355Z",
       "canal": "1555852813756534796",
@@ -2336,36 +2362,6 @@
       "apagou": true,
       "apagadas": 1,
       "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-02T20:47:20.269Z",
-      "canal": "1555680525547479100",
-      "guild": "1554284137261830184",
-      "autor": "1553551702458761217",
-      "motivo": "repetiu-5x",
-      "apagou": false,
-      "erro": "DiscordAPIError[10008]: Unknown Message",
-      "autorBot": false,
-      "webhook": false,
-      "canalNome": "confessionario",
-      "posAutor": 0,
-      "posBot": 2,
-      "curou": true
-    },
-    {
-      "ts": "2026-10-02T20:47:19.766Z",
-      "canal": "1555680525547479100",
-      "guild": "1554284137261830184",
-      "autor": "1553551702458761217",
-      "motivo": "repetiu-3x",
-      "apagou": false,
-      "erro": "DiscordAPIError[10008]: Unknown Message",
-      "autorBot": false,
-      "webhook": false,
-      "canalNome": "confessionario",
-      "posAutor": 0,
-      "posBot": 2,
-      "curou": true
     }
   ],
   "stats": {
@@ -2376,10 +2372,10 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 157,
-      "apagadas": 150,
+      "deteccoes": 159,
+      "apagadas": 151,
       "castigos": 0,
-      "falhas": 23
+      "falhas": 24
     }
   },
   "palavrasVarreduraEm": 1791013153823,
