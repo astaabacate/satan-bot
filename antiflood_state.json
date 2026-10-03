@@ -1,14 +1,24 @@
 {
   "rep": {
-    "1550100261731704866": {
-      "1g2gm0k:5": {
+    "1544938314572759083": {
+      "7zputz:26": {
         "t": [
-          1791004052584
+          1791004071901
         ]
       }
     }
   },
   "acoes": [
+    {
+      "ts": "2026-10-03T05:08:24.868Z",
+      "canal": "1555803274320289833",
+      "guild": "1554284137261830184",
+      "autor": "1554273544571981846",
+      "motivo": "bloqueio:estup",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
     {
       "ts": "2026-10-03T03:59:30.145Z",
       "canal": "1555787922597220372",
@@ -2068,15 +2078,6 @@
       "apagou": false,
       "apagadas": 0,
       "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-02T19:38:16.797Z",
-      "canal": "1554323715892715575",
-      "guild": "1554284137261830184",
-      "autor": "1539465305326227477",
-      "motivo": "bloqueio:abus",
-      "apagou": false,
-      "erro": "delete falhou"
     }
   ],
   "stats": {
@@ -2087,23 +2088,23 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 106,
-      "apagadas": 112,
+      "deteccoes": 107,
+      "apagadas": 113,
       "castigos": 0,
       "falhas": 8
     }
   },
-  "palavrasVarreduraEm": 1790992102123,
+  "palavrasVarreduraEm": 1791004057610,
   "palavrasHash": "abus|cp|cria|estr|estup|https|infan|macac|macaq|molest|negr|pedo|legado-v1",
   "purga": {},
   "faxina": {
-    "em": "2026-10-03T01:48:22.124Z",
+    "em": "2026-10-03T05:07:37.610Z",
     "canais": 0,
     "paginas": 0,
     "apagadas": 0,
     "falhas": 0,
     "motivos": {},
     "semLeitura": [],
-    "iniciadaEm": "2026-10-03T01:48:22.123Z"
+    "iniciadaEm": "2026-10-03T05:07:37.610Z"
   }
 }
