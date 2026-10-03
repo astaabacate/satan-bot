@@ -419,6 +419,16 @@
   },
   "acoes": [
     {
+      "ts": "2026-10-03T01:54:46.627Z",
+      "canal": "1555757220174626866",
+      "guild": "1554284137261830184",
+      "autor": "1531162005262831696",
+      "motivo": "bloqueio:cria",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
       "ts": "2026-10-03T01:54:22.358Z",
       "canal": "1555757220174626866",
       "guild": "1554284137261830184",
@@ -1904,8 +1914,8 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 29,
-      "apagadas": 31,
+      "deteccoes": 30,
+      "apagadas": 32,
       "castigos": 0,
       "falhas": 3
     }
