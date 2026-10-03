@@ -1,16 +1,6 @@
 {
   "rep": {
     "1548679466815983717": {
-      "15v65av:8": {
-        "t": [
-          1791015446974
-        ]
-      },
-      "1l3iitp:36": {
-        "t": [
-          1791015454875
-        ]
-      },
       "18vy47o:36": {
         "t": [
           1791015472835
@@ -59,6 +49,16 @@
       "vhbv5i:22": {
         "t": [
           1791015619954
+        ]
+      },
+      "10xb6xx:25": {
+        "t": [
+          1791015624645
+        ]
+      },
+      "1uog256:4": {
+        "t": [
+          1791015629550
         ]
       }
     },
@@ -157,6 +157,96 @@
     }
   },
   "acoes": [
+    {
+      "ts": "2026-10-03T08:20:34.530Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:https",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:20:33.643Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:https",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:20:33.292Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:https",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:20:32.554Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:https",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:20:31.991Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:https",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:20:31.370Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:https",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:20:31.050Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:https",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:20:30.744Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:https",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:20:22.911Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:https",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
     {
       "ts": "2026-10-03T08:16:06.973Z",
       "canal": "1555852813756534796",
@@ -2220,106 +2310,6 @@
       "apagou": true,
       "apagadas": 1,
       "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-03T02:05:25.902Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1555003801641943061",
-      "motivo": "bloqueio:macac",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-03T02:03:14.564Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1553551702458761217",
-      "motivo": "bloqueio:cria",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-03T02:02:26.749Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1555384415356461129",
-      "motivo": "repeticao-grudada:ka",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-03T02:02:16.069Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1555404324178362448",
-      "motivo": "repeticao-grudada:ks",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-03T02:01:49.261Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1554241546981871763",
-      "motivo": "repeticao-grudada:rs",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-03T02:01:27.734Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1555404324178362448",
-      "motivo": "repeticao-grudada:ka",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-03T01:59:04.518Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1553446124679860377",
-      "motivo": "bloqueio:estr",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-03T01:58:26.359Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1553446124679860377",
-      "motivo": "repetiu-9x",
-      "apagou": false,
-      "erro": "DiscordAPIError[10008]: Unknown Message",
-      "autorBot": false,
-      "webhook": false,
-      "canalNome": "confessionario",
-      "posAutor": 0,
-      "posBot": 2,
-      "curou": true
-    },
-    {
-      "ts": "2026-10-03T01:58:19.480Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1553446124679860377",
-      "motivo": "repetiu-8x",
-      "apagou": false,
-      "erro": "DiscordAPIError[10008]: Unknown Message",
-      "autorBot": false,
-      "webhook": false,
-      "canalNome": "confessionario",
-      "posAutor": 0,
-      "posBot": 2,
-      "curou": true
     }
   ],
   "stats": {
@@ -2330,8 +2320,8 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 234,
-      "apagadas": 214,
+      "deteccoes": 243,
+      "apagadas": 223,
       "castigos": 0,
       "falhas": 36
     }
