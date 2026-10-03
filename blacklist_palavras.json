@@ -175,6 +175,13 @@
       "criadoEm": "2026-10-03T08:04:45.088Z",
       "usos": 1,
       "ultimoUso": "2026-10-03T08:04:45.415Z"
+    },
+    "moiesta": {
+      "termo": "moIesta",
+      "chave": "moiesta",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-10-03T08:04:50.030Z",
+      "usos": 0
     }
   }
 }
