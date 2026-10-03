@@ -1,11 +1,6 @@
 {
   "rep": {
     "1548679466815983717": {
-      "1ko9zze:24": {
-        "t": [
-          1791014500873
-        ]
-      },
       "qes6us:2": {
         "t": [
           1791014505899
@@ -60,6 +55,11 @@
         "t": [
           1791014616186
         ]
+      },
+      "xjhyj5:23": {
+        "t": [
+          1791014640340
+        ]
       }
     },
     "1555714642263674940": {
@@ -96,6 +96,11 @@
       "3dtlb3:18": {
         "t": [
           1791014611407
+        ]
+      },
+      "wbafai:5": {
+        "t": [
+          1791014640339
         ]
       }
     },
@@ -222,6 +227,22 @@
     }
   },
   "acoes": [
+    {
+      "ts": "2026-10-03T08:04:01.650Z",
+      "canal": "1554323715892715575",
+      "guild": "1554284137261830184",
+      "autor": "1539465305326227477",
+      "motivo": "bloqueio:extrupa",
+      "apagou": false,
+      "erro": "DiscordAPIError[10008]: Unknown Message",
+      "autorBot": true,
+      "webhook": true,
+      "canalNome": "bump",
+      "posAutor": 2,
+      "posBot": 2,
+      "curouPal": true,
+      "termo": "extrupa"
+    },
     {
       "ts": "2026-10-03T08:00:04.163Z",
       "canal": "1555837463124115476",
@@ -2338,16 +2359,6 @@
       "apagou": true,
       "apagadas": 1,
       "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-02T20:46:04.124Z",
-      "canal": "1555680525547479100",
-      "guild": "1554284137261830184",
-      "autor": "1555600124883771524",
-      "motivo": "bloqueio:cria",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
     }
   ],
   "stats": {
@@ -2358,10 +2369,10 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 153,
+      "deteccoes": 154,
       "apagadas": 147,
       "castigos": 0,
-      "falhas": 22
+      "falhas": 23
     }
   },
   "palavrasVarreduraEm": 1791013153823,
