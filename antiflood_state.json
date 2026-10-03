@@ -80,16 +80,6 @@
       }
     },
     "1515080176927641771": {
-      "1gkbk9k:13": {
-        "t": [
-          1791014741311
-        ]
-      },
-      "h9oftf:2": {
-        "t": [
-          1791014744039
-        ]
-      },
       "i2tt1b:16": {
         "t": [
           1791014756723
@@ -109,14 +99,14 @@
         "t": [
           1791014871619
         ]
+      },
+      "dt6pb5:18": {
+        "t": [
+          1791015045043
+        ]
       }
     },
     "1555384415356461129": {
-      "j123l6:21": {
-        "t": [
-          1791014730009
-        ]
-      },
       "1qarv2d:38": {
         "t": [
           1791014795511
@@ -139,21 +129,9 @@
       }
     },
     "1553446124679860377": {
-      "1bekizd:21": {
-        "t": [
-          1791014740266
-        ]
-      },
       "1aue7fi:8": {
         "t": [
           1791014956540
-        ]
-      }
-    },
-    "1509221573679120565": {
-      "zmycu6:5": {
-        "t": [
-          1791014731461
         ]
       }
     },
@@ -208,6 +186,71 @@
     }
   },
   "acoes": [
+    {
+      "ts": "2026-10-03T08:10:49.031Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:macac",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:10:48.599Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:macac",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:10:48.381Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:macac",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:10:47.348Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:macac",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:10:46.984Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:macac",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:10:45.592Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1539465305326227477",
+      "motivo": "repetiu-9x",
+      "apagou": false,
+      "erro": "DiscordAPIError[10008]: Unknown Message",
+      "autorBot": true,
+      "webhook": true,
+      "canalNome": "confessionario",
+      "posAutor": 2,
+      "posBot": 2,
+      "curou": true
+    },
     {
       "ts": "2026-10-03T08:10:41.102Z",
       "canal": "1555852813756534796",
@@ -2315,71 +2358,6 @@
       "posAutor": 0,
       "posBot": 2,
       "curou": true
-    },
-    {
-      "ts": "2026-10-03T01:54:17.659Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1553446124679860377",
-      "motivo": "repetiu-6x",
-      "apagou": false,
-      "erro": "DiscordAPIError[10008]: Unknown Message",
-      "autorBot": false,
-      "webhook": false,
-      "canalNome": "confessionario",
-      "posAutor": 0,
-      "posBot": 2,
-      "curou": true
-    },
-    {
-      "ts": "2026-10-03T01:54:05.733Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1553446124679860377",
-      "motivo": "repetiu-4x",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-03T01:54:02.582Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1553446124679860377",
-      "motivo": "repetiu-3x",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-03T01:53:18.742Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1527411059051335941",
-      "motivo": "repeticao-interna:e:🥵x5",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-03T01:52:09.748Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1527411059051335941",
-      "motivo": "bloqueio:abus",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-03T01:52:01.520Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1555003801641943061",
-      "motivo": "repetiu-3x",
-      "apagou": true,
-      "apagadas": 4,
-      "tipo": "texto"
     }
   ],
   "stats": {
@@ -2390,10 +2368,10 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 222,
-      "apagadas": 204,
+      "deteccoes": 228,
+      "apagadas": 209,
       "castigos": 0,
-      "falhas": 34
+      "falhas": 35
     }
   },
   "palavrasVarreduraEm": 1791014987109,
