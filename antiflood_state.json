@@ -250,6 +250,51 @@
   },
   "acoes": [
     {
+      "ts": "2026-10-03T06:02:33.512Z",
+      "canal": "1555818587007230033",
+      "guild": "1554284137261830184",
+      "autor": "1535519825525219339",
+      "motivo": "repetiu-9x+penalidade",
+      "apagou": false,
+      "erro": "DiscordjsError [ChannelNotCached]: Could not find the channel where this message came from in the cache!",
+      "autorBot": false,
+      "webhook": false,
+      "canalNome": null,
+      "posAutor": 0,
+      "posBot": 2,
+      "curou": false
+    },
+    {
+      "ts": "2026-10-03T06:02:28.809Z",
+      "canal": "1555818587007230033",
+      "guild": "1554284137261830184",
+      "autor": "1535519825525219339",
+      "motivo": "penalidade",
+      "apagou": false,
+      "erro": "DiscordjsError [ChannelNotCached]: Could not find the channel where this message came from in the cache!",
+      "autorBot": false,
+      "webhook": false,
+      "canalNome": null,
+      "posAutor": 0,
+      "posBot": 2,
+      "curou": false
+    },
+    {
+      "ts": "2026-10-03T06:02:28.714Z",
+      "canal": "1555818587007230033",
+      "guild": "1554284137261830184",
+      "autor": "1535519825525219339",
+      "motivo": "repetiu-8x+penalidade",
+      "apagou": false,
+      "erro": "DiscordjsError [ChannelNotCached]: Could not find the channel where this message came from in the cache!",
+      "autorBot": false,
+      "webhook": false,
+      "canalNome": null,
+      "posAutor": 0,
+      "posBot": 2,
+      "curou": false
+    },
+    {
       "ts": "2026-10-03T06:02:28.580Z",
       "canal": "1555818587007230033",
       "guild": "1554284137261830184",
@@ -2316,36 +2361,6 @@
       "apagou": true,
       "apagadas": 1,
       "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-02T19:50:18.798Z",
-      "canal": "1555665375109320859",
-      "guild": "1554284137261830184",
-      "autor": "1555547743718481971",
-      "motivo": "bloqueio:cp",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-02T19:50:15.523Z",
-      "canal": "1555665375109320859",
-      "guild": "1554284137261830184",
-      "autor": "1555547743718481971",
-      "motivo": "bloqueio:cp",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-02T19:50:14.928Z",
-      "canal": "1555665375109320859",
-      "guild": "1554284137261830184",
-      "autor": "1554273544571981846",
-      "motivo": "repetiu-2x",
-      "apagou": true,
-      "apagadas": 2,
-      "tipo": "figurinha"
     }
   ],
   "stats": {
@@ -2356,10 +2371,10 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 126,
+      "deteccoes": 129,
       "apagadas": 126,
       "castigos": 0,
-      "falhas": 14
+      "falhas": 17
     }
   },
   "palavrasVarreduraEm": 1791004057610,
