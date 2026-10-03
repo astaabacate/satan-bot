@@ -215,6 +215,16 @@
   },
   "acoes": [
     {
+      "ts": "2026-10-03T03:40:46.096Z",
+      "canal": "1555772571306430484",
+      "guild": "1554284137261830184",
+      "autor": "1549048273933836330",
+      "motivo": "bloqueio:macac",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
       "ts": "2026-10-03T03:34:40.730Z",
       "canal": "1555772571306430484",
       "guild": "1554284137261830184",
@@ -2271,16 +2281,6 @@
       "apagou": true,
       "apagadas": 1,
       "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-02T19:37:14.838Z",
-      "canal": "1555656021630910484",
-      "guild": "1554284137261830184",
-      "autor": "1554165512416665714",
-      "motivo": "bloqueio:estup",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
     }
   ],
   "stats": {
@@ -2291,8 +2291,8 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 99,
-      "apagadas": 105,
+      "deteccoes": 100,
+      "apagadas": 106,
       "castigos": 0,
       "falhas": 8
     }
