@@ -63,16 +63,6 @@
       }
     },
     "1555714642263674940": {
-      "1aw7pe7:12": {
-        "t": [
-          1791014689390
-        ]
-      },
-      "1gekmol:14": {
-        "t": [
-          1791014724543
-        ]
-      },
       "8isrpw:38": {
         "t": [
           1791014752059
@@ -90,21 +80,6 @@
       }
     },
     "1515080176927641771": {
-      "14pebnq:35": {
-        "t": [
-          1791014679563
-        ]
-      },
-      "1t6ekum:4": {
-        "t": [
-          1791014684691
-        ]
-      },
-      "e8xfru:14": {
-        "t": [
-          1791014722825
-        ]
-      },
       "1gkbk9k:13": {
         "t": [
           1791014741311
@@ -156,6 +131,11 @@
         "t": [
           1791014898597
         ]
+      },
+      "tml36v:14": {
+        "t": [
+          1791015006842
+        ]
       }
     },
     "1553446124679860377": {
@@ -170,29 +150,7 @@
         ]
       }
     },
-    "1555003801641943061": {
-      "1hrbask:34": {
-        "t": [
-          1791014705797
-        ]
-      }
-    },
     "1509221573679120565": {
-      "tsg01o:8": {
-        "t": [
-          1791014694332
-        ]
-      },
-      "1rcdkou:20": {
-        "t": [
-          1791014701094
-        ]
-      },
-      "1tkoiy7:10": {
-        "t": [
-          1791014722778
-        ]
-      },
       "zmycu6:5": {
         "t": [
           1791014731461
@@ -200,11 +158,6 @@
       }
     },
     "1553551702458761217": {
-      "1es0hez:14": {
-        "t": [
-          1791014703730
-        ]
-      },
       "321hpy:25": {
         "t": [
           1791014786342
@@ -231,18 +184,90 @@
         "t": [
           1791014915000
         ]
+      },
+      "e9nqz7:11": {
+        "t": [
+          1791015028765
+        ]
       }
     },
     "1539465305326227477": {
       "1rvql63:18": {
         "t": [
           1791014963364,
-          1791014964275
+          1791014964275,
+          1791014992857,
+          1791014998924,
+          1791015002101,
+          1791015004645,
+          1791015006832,
+          1791015012515,
+          1791015023866
         ]
       }
     }
   },
   "acoes": [
+    {
+      "ts": "2026-10-03T08:10:21.493Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1539465305326227477",
+      "motivo": "repetiu-6x",
+      "apagou": false,
+      "erro": "DiscordAPIError[10008]: Unknown Message",
+      "autorBot": true,
+      "webhook": true,
+      "canalNome": "confessionario",
+      "posAutor": 2,
+      "posBot": 2,
+      "curou": true
+    },
+    {
+      "ts": "2026-10-03T08:10:15.396Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1539465305326227477",
+      "motivo": "repetiu-5x",
+      "apagou": false,
+      "erro": "DiscordAPIError[10008]: Unknown Message",
+      "autorBot": true,
+      "webhook": true,
+      "canalNome": "confessionario",
+      "posAutor": 2,
+      "posBot": 2,
+      "curou": true
+    },
+    {
+      "ts": "2026-10-03T08:09:59.974Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1539465305326227477",
+      "motivo": "repetiu-4x",
+      "apagou": false,
+      "erro": "DiscordAPIError[10008]: Unknown Message",
+      "autorBot": true,
+      "webhook": true,
+      "canalNome": "confessionario",
+      "posAutor": 2,
+      "posBot": 2,
+      "curou": true
+    },
+    {
+      "ts": "2026-10-03T08:09:53.782Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1539465305326227477",
+      "motivo": "repetiu-3x",
+      "apagou": false,
+      "erro": "DiscordAPIError[10008]: Unknown Message",
+      "autorBot": true,
+      "webhook": true,
+      "canalNome": "confessionario",
+      "posAutor": 2,
+      "posBot": 2,
+      "curou": true
+    },
     {
       "ts": "2026-10-03T08:08:45.270Z",
       "canal": "1555852813756534796",
@@ -2351,46 +2376,6 @@
       "apagou": true,
       "apagadas": 1,
       "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-03T01:44:10.434Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1553446124679860377",
-      "motivo": "bloqueio:estr",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-03T01:44:04.948Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1555003801641943061",
-      "motivo": "bloqueio:estr",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-03T01:44:02.049Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1553446124679860377",
-      "motivo": "bloqueio:estr",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-03T01:43:41.508Z",
-      "canal": "1555741868774391808",
-      "guild": "1554284137261830184",
-      "autor": "1555003801641943061",
-      "motivo": "bloqueio:estr",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
     }
   ],
   "stats": {
@@ -2401,23 +2386,23 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 214,
+      "deteccoes": 218,
       "apagadas": 202,
       "castigos": 0,
-      "falhas": 28
+      "falhas": 32
     }
   },
-  "palavrasVarreduraEm": 1791013153823,
-  "palavrasHash": "abus|cp|cria|estr|estup|https|i|ia|ib|ie|ig|ii|infan|io|is|it|macac|macaq|molest|negr|pedo|legado-v1",
+  "palavrasVarreduraEm": 1791014987109,
+  "palavrasHash": "abus|cp|cria|estr|estup|ext|extrupa|https|i|ia|ib|ie|ig|ii|infan|io|is|it|macac|macaq|moies|moiesta|moiestar|molest|negr|pedo|rape|legado-v1",
   "purga": {},
   "faxina": {
-    "em": "2026-10-03T07:39:13.824Z",
+    "em": "2026-10-03T08:09:47.110Z",
     "canais": 0,
     "paginas": 0,
     "apagadas": 0,
     "falhas": 0,
     "motivos": {},
     "semLeitura": [],
-    "iniciadaEm": "2026-10-03T07:39:13.823Z"
+    "iniciadaEm": "2026-10-03T08:09:47.109Z"
   }
 }
