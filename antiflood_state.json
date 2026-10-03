@@ -209,6 +209,41 @@
   },
   "acoes": [
     {
+      "ts": "2026-10-03T08:10:41.102Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1555003801641943061",
+      "motivo": "bloqueio:estr",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:10:40.068Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:macac",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:10:39.876Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1539465305326227477",
+      "motivo": "repetiu-8x",
+      "apagou": false,
+      "erro": "DiscordAPIError[10008]: Unknown Message",
+      "autorBot": true,
+      "webhook": true,
+      "canalNome": "confessionario",
+      "posAutor": 2,
+      "posBot": 2,
+      "curou": true
+    },
+    {
       "ts": "2026-10-03T08:10:33.844Z",
       "canal": "1555852813756534796",
       "guild": "1554284137261830184",
@@ -2345,42 +2380,6 @@
       "apagou": true,
       "apagadas": 4,
       "tipo": "texto"
-    },
-    {
-      "ts": "2026-10-03T01:47:43.287Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1507809400629235732",
-      "motivo": "bloqueio:macac",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-03T01:45:50.283Z",
-      "canal": "1555757220174626866",
-      "guild": "1554284137261830184",
-      "autor": "1507809400629235732",
-      "motivo": "bloqueio:cp",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-03T01:45:22.427Z",
-      "canal": "1554323715892715575",
-      "guild": "1554284137261830184",
-      "autor": "1539465305326227477",
-      "motivo": "bloqueio:molest",
-      "apagou": false,
-      "erro": "DiscordAPIError[10008]: Unknown Message",
-      "autorBot": true,
-      "webhook": true,
-      "canalNome": "bump",
-      "posAutor": 2,
-      "posBot": 2,
-      "curouPal": true,
-      "termo": "molest"
     }
   ],
   "stats": {
@@ -2391,10 +2390,10 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 219,
-      "apagadas": 202,
+      "deteccoes": 222,
+      "apagadas": 204,
       "castigos": 0,
-      "falhas": 33
+      "falhas": 34
     }
   },
   "palavrasVarreduraEm": 1791014987109,
