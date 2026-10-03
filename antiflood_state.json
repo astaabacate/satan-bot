@@ -269,6 +269,26 @@
   },
   "acoes": [
     {
+      "ts": "2026-10-03T08:08:02.751Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:estup",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
+      "ts": "2026-10-03T08:07:58.641Z",
+      "canal": "1555852813756534796",
+      "guild": "1554284137261830184",
+      "autor": "1553446124679860377",
+      "motivo": "bloqueio:ext",
+      "apagou": true,
+      "apagadas": 1,
+      "tipo": "palavra"
+    },
+    {
       "ts": "2026-10-03T08:07:43.600Z",
       "canal": "1555852813756534796",
       "guild": "1554284137261830184",
@@ -2400,26 +2420,6 @@
       "apagou": true,
       "apagadas": 1,
       "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-02T21:15:09.401Z",
-      "canal": "1555680525547479100",
-      "guild": "1554284137261830184",
-      "autor": "1555675589044867188",
-      "motivo": "bloqueio:negr",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
-    },
-    {
-      "ts": "2026-10-02T21:09:07.747Z",
-      "canal": "1555680525547479100",
-      "guild": "1554284137261830184",
-      "autor": "1531162005262831696",
-      "motivo": "bloqueio:abus",
-      "apagou": true,
-      "apagadas": 1,
-      "tipo": "palavra"
     }
   ],
   "stats": {
@@ -2430,8 +2430,8 @@
       "falhas": 23
     },
     "2026-10-03": {
-      "deteccoes": 167,
-      "apagadas": 155,
+      "deteccoes": 169,
+      "apagadas": 157,
       "castigos": 0,
       "falhas": 28
     }
