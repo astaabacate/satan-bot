@@ -167,6 +167,13 @@
       "criadoEm": "2026-10-03T08:04:01.142Z",
       "usos": 1,
       "ultimoUso": "2026-10-03T08:04:01.296Z"
+    },
+    "moiestar": {
+      "termo": "moIestar",
+      "chave": "moiestar",
+      "por": "1521612392105250836",
+      "criadoEm": "2026-10-03T08:04:45.088Z",
+      "usos": 0
     }
   }
 }
